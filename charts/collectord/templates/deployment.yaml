@@ -1,0 +1,101 @@
+{{- if .Values.deployment.create -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-addon
+  namespace: {{ .Release.Namespace }}
+  {{- with .Values.deployment.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  labels:
+    app: {{ .Release.Name }}
+    {{- with .Values.deployment.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      daemon: {{ .Release.Name }}
+  template:
+    metadata:
+      name: {{ .Release.Name }}-addon
+      {{- with .Values.deployment.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        daemon: {{ .Release.Name }}
+        {{- with .Values.deployment.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      priorityClassName: {{ .Values.priorityClass.name | default (printf "%s-critical" .Release.Name) }}
+      serviceAccountName: {{ .Values.serviceAccount.name | default .Release.Name }}
+      containers:
+      - name: {{ .Release.Name }}
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          runAsUser: 0
+          privileged: true
+        resources:
+          {{- toYaml .Values.deployment.resources | nindent 10 }}
+        env:
+        - name: KUBERNETES_NODENAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        volumeMounts:
+        - name: {{ .Release.Name }}-state
+          mountPath: /data
+        - name: {{ .Release.Name }}-config
+          mountPath: /config/
+          readOnly: true
+        {{- range $value := .Values.secrets }}
+        - name: {{ $value.name }}
+          mountPath: {{ $value.mountPath | default (printf "/config/%s" $value.name) }}
+          readOnly: true
+        {{- end }}
+        {{- if .Values.mountLocalTime }}
+        - name: localtime
+          mountPath: /etc/localtime
+          readOnly: true
+        {{- end }}
+      volumes:
+      - name: {{ .Release.Name }}-state
+        hostPath:
+          path: /var/lib/{{ .Release.Name }}/data/
+          type: Directory
+      {{- if .Values.mountLocalTime }}
+      - name: localtime
+        hostPath:
+          path: /etc/localtime
+      {{- end }}
+      - name: {{ .Release.Name }}-config
+        configMap:
+          name: {{ .Release.Name }}
+          items:
+          - key: 001-general.conf
+            path: 001-general.conf
+          - key: 004-addon.conf
+            path: 004-addon.conf
+          {{- range $filename, $content := .Values.configMap.allAdditionalFiles }}
+          - key: {{ $filename }}
+            path: {{ $filename }}
+          {{- end }}
+          {{- range $filename, $content := .Values.configMap.deploymentAdditionalFiles }}
+          - key: {{ $filename }}
+            path: {{ $filename }}
+          {{- end }}
+      {{- range $value := .Values.secrets }}
+      - name: {{ $value.name }}
+        secret:
+          secretName: {{ $value.name }}
+      {{- end }}
+{{- end -}}

@@ -1,0 +1,7 @@
+{{- if .Values.priorityClass.create -}}
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ .Values.priorityClass.name | default (printf "%s-critical" .Release.Name) }}
+value: {{ .Values.priorityClass.value }}
+{{- end }}

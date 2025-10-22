@@ -1,0 +1,193 @@
+# Default values for collectord.
+# This is a YAML-formatted file.
+# Declare variables to be substituted into your templates.
+  
+# Image settings
+image:
+  # OpenShift: docker.io/outcoldsolutions/collectorforopenshift
+  # Kubernetes: docker.io/outcoldsolutions/collectorforkubernetes
+  # To use RHEL Certified Image for OpenShift, specify registry.connect.redhat.com/outcoldsolutions/collectorforopenshift
+  repository: docker.io/outcoldsolutions/collectorforkubernetes
+  tag: "25.10.2"
+  pullPolicy: Always
+
+# Service Account
+serviceAccount:
+  name: ""
+  create: true
+
+# Priority Class
+priorityClass:
+  name: ""
+  create: true
+  value: 1000000000
+
+# RBAC settings
+clusterRole:
+  name: ""
+  create: true
+  rules:
+  # - apiGroups:
+    #   - ''
+    #   resources:
+    #   - 'pods'
+    #   - 'nodes'
+    #   verbs:
+    #   - 'get'
+    #   - 'list'
+    #   - 'watch'
+
+# ConfigMap settings
+configMap:
+  create: true
+  # Additional files to be added to the ConfigMap
+  # Example:
+  # daemonsetAdditionalFiles:
+  #   "my-template.json": |
+  #     {
+  #       "key": "value"
+  #     }
+  daemonsetAdditionalFiles: {}
+  daemonsetMasterAdditionalFiles: {}
+  deploymentAdditionalFiles: {}
+    
+mountLocalTime: true
+mountRootfsAsReadOnly: false
+    
+# DaemonSet configuration for worker nodes
+daemonset:
+  create: true
+
+  # Workload-level annotations and labels (applied to DaemonSet resource)
+  annotations: {}
+    # Example:
+    # deployment.kubernetes.io/revision: "1"
+  
+  labels: {}
+    # Example:
+    # component: "collector"
+    # tier: "monitoring"
+
+  # Pod-level annotations and labels (applied to pod template)
+  podAnnotations: {}
+    # Example:
+    # prometheus.io/scrape: "true"
+    # prometheus.io/port: "9090"
+  
+  podLabels: {}
+    # Example:
+    # version: "v1.0.0"
+    # environment: "production"
+  
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 1024Mi
+    requests:
+      cpu: 500m
+      memory: 256Mi
+
+  # Affinity for daemonset pods
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: node-role.kubernetes.io/control-plane
+            operator: DoesNotExist
+
+  # Tolerations for daemonset pods
+  tolerations:
+  - operator: "Exists"
+    effect: "NoSchedule"
+  - operator: "Exists"
+    effect: "NoExecute"
+
+# DaemonSet configuration for master nodes
+daemonsetMaster:
+  create: true
+
+  # Workload-level annotations and labels (applied to DaemonSet resource)
+  annotations: {}
+    # Example:
+    # deployment.kubernetes.io/revision: "1"
+  
+  labels: {}
+    # Example:
+    # component: "collector-master"
+    # tier: "monitoring"
+
+  # Pod-level annotations and labels (applied to pod template)
+  podAnnotations: {}
+    # Example:
+    # prometheus.io/scrape: "true"
+    # prometheus.io/port: "9090"
+  
+  podLabels: {}
+    # Example:
+    # version: "v1.0.0"
+    # environment: "production"
+  
+  # Resources
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 1024Mi
+    requests:
+      cpu: 500m
+      memory: 256Mi
+
+  # Affinity for daemonset-master pods
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+
+  # Tolerations for daemonset-master pods
+  tolerations:
+  - operator: "Exists"
+    effect: "NoSchedule"
+  - operator: "Exists"
+    effect: "NoExecute"
+
+# Deployment configuration for addon
+deployment:
+  create: true
+
+  # Workload-level annotations and labels (applied to Deployment resource)
+  annotations: {}
+    # Example:
+    # deployment.kubernetes.io/revision: "1"
+  
+  labels: {}
+    # Example:
+    # component: "collector-addon"
+    # tier: "monitoring"
+
+  # Pod-level annotations and labels (applied to pod template)
+  podAnnotations: {}
+    # Example:
+    # prometheus.io/scrape: "true"
+    # prometheus.io/port: "9090"
+  
+  podLabels: {}
+    # Example:
+    # version: "v1.0.0"
+    # environment: "production"
+  
+  # Resources
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 64Mi
+
+configuration:
+  general: {}
+  inputs: {}
+  outputs: {}

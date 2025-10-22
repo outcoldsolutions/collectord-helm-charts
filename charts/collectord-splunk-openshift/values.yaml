@@ -1,0 +1,552 @@
+scc:
+  create: true
+  name: ""
+  
+collectord:
+  image:
+    repository: docker.io/outcoldsolutions/collectorforopenshift
+    # To use RHEL certified image, use the following line
+    # repository: registry.connect.redhat.com/outcoldsolutions/collectorforopenshift
+    
+  # RBAC settings
+  clusterRole:
+    name: ""
+    create: true
+    rules:
+    - apiGroups:
+      - apps.openshift.io
+      - quota.openshift.io
+      resources:
+      - clusterresourcequotas
+      - deploymentconfigs
+      verbs:
+      - get
+      - list
+      - watch
+  
+  configuration:
+    general:
+      # IMPORTANT: Please review license https://www.outcoldsolutions.com/docs/license-agreement/
+      # and accept license by changing the value to *true*
+      acceptLicense: false
+      license: ""
+      dataPath: "./data/"
+      logLevel: info
+      httpServerBinding: ""
+      httpServerLog: false
+      telemetryEndpoint: "https://license.outcold.solutions/telemetry/"
+      licenseEndpoint: "https://license.outcold.solutions/license/"
+      licenseServerProxyUrl: ""
+      licenseServerProxyBasicAuth: ""
+      hostname: ""
+      defaultOutput: "splunk"
+      fileInputBufferSize: "256b"
+      fileInputLineMaxSize: "1mb"
+      fields:
+        openshift_cluster: "-"
+      ec2Metadata: {}
+      annotationsSubdomain: ""
+      thruputPerSecond: ""
+      tooOldEvents: ""
+      tooNewEvents: ""
+      autoSkipGzipFiles: true
+      kubernetes:
+        serviceURL: ""
+        nodeName: ""
+        tokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+        certPath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        timeout: 30m
+        metadataTTL: 30s
+        volumesRootDir: /rootfs/var/lib/kubelet/
+        includeAnnotations: []
+        excludeLabels: []
+        watch:
+          - 'v1/namespace'
+          - 'apps.openshift.io/v1/deploymentconfig'
+          - 'collectord.io/v1/configuration'
+        watchImplementation: 2
+      crio:
+        url: unix:///rootfs/var/run/crio/crio.sock
+        timeout: 1m
+    licenseClient:
+      url: ""
+      basicAuth: ""
+      insecure: false
+      capath: ""
+      caname: ""
+      proxyUrl: ""
+      proxyBasicAuth: ""
+    pipeJoin:
+      disabled: false
+      maxInterval: 100ms
+      maxWait: 1s
+      maxSize: 1MB
+      patternRegex: '^[^\s]'
+    pipeReplace: []
+    pipeHash: []
+  
+    outputs:
+      splunk:
+        default:
+          url: ""
+          urls: []
+          urlSelection: random-with-round-robin
+          token: ""
+          insecure: false
+          minTLSVersion: ""
+          maxTLSVersion: ""
+          caPath: ""
+          caName: ""
+          clientCertPath: ""
+          clientKeyPath: ""
+          frequency: 5s
+          batchSize: 768K
+          events: 50
+          proxyUrl: ""
+          proxyBasicAuth: ""
+          ackUrl: ""
+          ackUrls: []
+          ackEnabled: false
+          ackTimeout: 3m
+          timeout: 30s
+          dedicatedClientPerIndex: true
+          incorrectIndexBehavior: RedirectToDefault
+          compressionLevel: default
+          threads: 2
+          threadsAlgorithm: weighted
+          excludeFields: []
+          requireExplicitIndex: false
+          maximumMessageLength: ""
+          includeEventID: false
+          queueSize: 1024
+          timestampPrecision:
+  
+    # Input configurations
+    inputs:
+      # Collectord internal metrics
+      collectordMetrics:
+        disabled: false
+        type: "openshift_prometheus"
+        interval: 1m
+        output: ""
+        index: ""
+        whitelist:
+        - "^file_input_open$"
+        - "^file_input_read_bytes$"
+        - "^openshift_handlers$"
+        - "^pipe$"
+        - "^pipelines_num$"
+        - "^splunk_post_bytes_sum.*$"
+        - "^splunk_post_events_count_sum.*$"
+        - "^splunk_post_failed_requests$"
+        - "^splunk_post_message_max_lag_seconds_bucket.*$"
+        - "^splunk_post_requests_seconds_sum.*$"
+        - "^splunk_post_retries_required_sum.*$"
+        blacklist: []
+    
+      # Prometheus auto-discovery
+      prometheusAuto:
+        disabled: false
+        type: "openshift_prometheus"
+        index: ""
+        interval: 60s
+        includeHelp: true
+        timeout: 30s
+        output: ""
+        authorization: []
+    
+      # System stats
+      systemStats:
+        disabled:
+          host: false
+          cgroup: false
+        pathCgroups: /rootfs/sys/fs/cgroup
+        pathProc: /rootfs/proc
+        statsInterval: 30s
+        type:
+          host: "openshift_stats_v2_host"
+          cgroup: "openshift_stats_v2_cgroup"
+        index:
+          host: ""
+          cgroup: ""
+        output:
+          host: ""
+          cgroup: ""
+      
+      # Process stats
+      procStats:
+        disabled: false
+        pathProc: /rootfs/proc
+        statsInterval: 30s
+        type: "openshift_proc_stats_v2"
+        index:
+          host: ""
+          cgroup: ""
+        includeSystemThreads: false
+        output:
+          host: ""
+          cgroup: ""
+        hideArgs: false
+        
+      netStats:
+        disabled: false
+        pathProc: /rootfs/proc
+        statsInterval: 30s
+        type: "openshift_net_stats_v2"
+        index:
+          host: ""
+          cgroup: ""
+        output:
+          host: ""
+          cgroup: ""
+      
+      netSocketTable:
+        disabled: false
+        pathProc: /rootfs/proc
+        statsInterval: 30s
+        type: "openshift_net_socket_table"
+        index:
+          host: ""
+          cgroup: ""
+        output:
+          host: ""
+          cgroup: ""
+        group: true
+        disableLookup: false
+        
+      mountStats:
+        disabled: false
+        statsInterval: 30s
+        type: "openshift_mount_stats"
+        index: ""
+        output: ""
+      
+      diskStats:
+        disabled: false
+        statsInterval: 30s
+        type: "openshift_disk_stats"
+        index: ""
+        output: ""
+        
+      containerLogs:
+        disabled: false
+        type: "openshift_logs"
+        path: "/rootfs/var/lib/docker/containers/"
+        crioPath: "/rootfs/var/log/pods/"
+        pollingInterval: 250ms
+        walkingInterval: 5s
+        verboseFields: false
+        index: ""
+        joinPartialEvents: true
+        stripTerminalEscapeSequences: false
+        stripTerminalEscapeSequencesRegex: '(\x1b\[\d{1,3}(;\d{1,3})*m)|(\x07)|(\x1b]\d+(\s\d)?;[^\x07]+\x07)|(.*\x1b\[K)'
+        samplingPercent: -1
+        samplingKey: ""
+        output: ""
+        thruputPerSecond: ""
+        tooOldEvents: ""
+        tooNewEvents: ""
+        
+      applicationLogs:
+        disabled: false
+        root: /rootfs/
+        syncInterval: 5s
+        glob: "*.log*"
+        pollingInterval: 250ms
+        walkingInterval: 5s
+        verboseFields: false
+        type: "openshift_logs"
+        index: ""
+        eventPatternRegex: '^[^\s]'
+        eventPatternMaxInterval: 100ms
+        eventPatternMaxWait: 1s
+        eventPatternMaxSize: 1MB
+        samplingPercent: -1
+        samplingKey: ""
+        output: ""
+        thruputPerSecond: ""
+        tooOldEvents: ""
+        tooNewEvents: ""
+        maxHoldAfterClose: 1800s
+      
+      hostLogs:
+        "audit-logs":
+          disabled: false
+          controlPlaneOnly: true
+          path: '/rootfs/var/log/kube-apiserver/'
+          glob: 'audit*.log'
+          match: ""
+          recursive: false
+          pollingInterval: 250ms
+          walkingInterval: 5s
+          verboseFields: false
+          type: "openshift_host_logs"
+          index: ""
+          extraction: '(?P<message>.*"stageTimestamp":"(?P<timestamp>[^"]+)".*)'
+          extractionMessageField: 'message'
+          timestampField: 'timestamp'
+          timestampFormat: '2006-01-02T15:04:05.999999999Z07:00'
+          timestampLocation: ""
+          samplingPercent: -1
+          samplingKey: ""
+          output: ""
+          thruputPerSecond: ""
+          tooOldEvents: ""
+          tooNewEvents: ""
+          eventPattern: ""
+          blacklist: []
+          whitelist: []
+      
+      journald:
+        disabled: false
+        path:
+          persistent: /rootfs/var/log/journal/
+          volatile: /rootfs/run/log/journal/
+        pollingInterval: 250ms
+        startFromRel: ""
+        type: "openshift_host_logs"
+        index: ""
+        samplingPercent: -1
+        samplingKey: ""
+        reopenInterval: 1h
+        output: ""
+        thruputPerSecond: ""
+        tooOldEvents: ""
+        tooNewEvents: ""
+        eventPattern: '^[^\s]'
+        blacklist:
+          - '^I\d+.*$'
+        whitelist: []
+        spawnExternalProcess: false
+        
+      diagnostics:
+        # Collectord can report if node reboot is required (uncomment to use it)
+        node-reboot-required:
+          path: /rootfs/var/run/reboot-required*
+          interval: "1h"
+        # See https://www.kernel.org/doc/Documentation/admin-guide/hw-vuln/index.rst
+        # And https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-devices-system-cpu
+        cpu-vulnerabilities:
+          path: /rootfs/sys/devices/system/cpu/vulnerabilities/*
+          interval: 1h
+          
+      prometheus:
+        "kubelet":
+          controlPlaneOnly: false
+          disabled: false
+          type: "openshift_prometheus"
+          index: ""
+          host: '${KUBERNETES_NODENAME}'
+          source: "kubelet"
+          interval: "60s"
+          timeout: "60s"
+          endpoint: "https://127.0.0.1:10250/metrics"
+          endpoints: []
+          tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          certPath: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          clientCertPath: ""
+          clientKeyPath: ""
+          insecure: true
+          includeHelp: false
+          output: ""
+          whitelist:
+            - '^(kubernetes|openshift)_build_info$'
+            - '^kubelet_runtime_operations_duration_seconds_sum$'
+            - '^kubelet_docker_operations_duration_seconds_sum$'
+            - '^kubelet_network_plugin_operations_duration_seconds_sum$'
+            - '^kubelet_cgroup_manager_duration_seconds_sum$'
+            - '^storage_operation_duration_seconds_sum$'
+            - '^kubelet_docker_operations_errors_total$'
+            - '^kubelet_runtime_operations_errors_total$'
+            - '^rest_client_requests_total$'
+            - '^process_cpu_seconds_total$'
+            - '^process_resident_memory_bytes$'
+            - '^process_virtual_memory_bytes$'
+            - '^rest_client_request_duration_seconds_sum$'
+            - '^kubelet_volume_stats_.+$'
+            - '^rest_client_requests_total$'
+          backlist: []
+        "kubernetes-api":
+          controlPlaneOnly: true
+          disabled: false
+          type: "openshift_prometheus"
+          index: ""
+          host: '${KUBERNETES_NODENAME}'
+          source: "kubernetes-api"
+          interval: "60s"
+          timeout: "60s"
+          endpoint: ""
+          endpoints:
+            - "https://127.0.0.1:8443/metrics"
+            - "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}/metrics"
+          tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          certPath: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          clientCertPath: ""
+          clientKeyPath: ""
+          insecure: true
+          includeHelp: false
+          output: ""
+          whitelist:
+            - '^(kubernetes|openshift)_build_info$'
+            - '^authenticated_user_requests$'
+            - '^apiserver_request_total$'
+            - '^process_cpu_seconds_total$'
+            - '^process_resident_memory_bytes$'
+            - '^process_virtual_memory_bytes$'
+            - '^rest_client_request_duration_seconds_sum$'
+            - '^rest_client_requests_total$'
+          backlist: []
+        "scheduler":
+          controlPlaneOnly: true
+          disabled: false
+          type: "openshift_prometheus"
+          index: ""
+          host: '${KUBERNETES_NODENAME}'
+          source: "scheduler"
+          interval: "60s"
+          timeout: "60s"
+          endpoint: ""
+          endpoints:
+            - "https://:10259/metrics"
+            - "https://:8444/metrics"
+          tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          certPath: ""
+          clientCertPath: ""
+          clientKeyPath: ""
+          insecure: true
+          includeHelp: false
+          output: ""
+          whitelist:
+            - '^(kubernetes|openshift)_build_info$'
+            - '^scheduler_e2e_scheduling_duration_seconds_sum$'
+            - '^scheduler_binding_duration_seconds_sum$'
+            - '^scheduler_scheduling_algorithm_duration_seconds_sum$'
+            - '^process_cpu_seconds_total$'
+            - '^process_resident_memory_bytes$'
+            - '^process_virtual_memory_bytes$'
+            - '^process_resident_memory_bytes$'
+            - '^process_virtual_memory_bytes$'
+          backlist: []
+        "controller":
+          controlPlaneOnly: true
+          disabled: false
+          type: "openshift_prometheus"
+          index: ""
+          host: '${KUBERNETES_NODENAME}'
+          source: "controller"
+          interval: "60s"
+          timeout: "60s"
+          endpoint: ""
+          endpoints:
+            - "https://:10257/metrics"
+            - "https://:8444/metrics"
+          tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          certPath: ""
+          clientCertPath: ""
+          clientKeyPath: ""
+          insecure: true
+          includeHelp: false
+          output: ""
+          whitelist:
+            - '^(kubernetes|openshift)_build_info$'
+            - '^process_cpu_seconds_total$'
+            - '^process_resident_memory_bytes$'
+            - '^process_virtual_memory_bytes$'
+            - '^node_collector_zone_size$'
+            - '^node_collector_zone_health$'
+            - '^node_collector_unhealthy_nodes_in_zone$'
+          backlist: []
+        "etcd":
+          controlPlaneOnly: true
+          disabled: false
+          type: "openshift_prometheus"
+          index: ""
+          host: '${KUBERNETES_NODENAME}'
+          source: "etcd"
+          interval: "60s"
+          timeout: "60s"
+          endpoint: ""
+          endpoints:
+            - "https://:9979/metrics"
+            - "https://:9978/metrics"
+          tokenPath: ""
+          certPath: "/rootfs/etc/kubernetes/static-pod-resources/etcd-certs/secrets/etcd-all-certs/etcd-serving-*.crt"
+          clientCertPath: "/rootfs/etc/kubernetes/static-pod-resources/etcd-certs/secrets/etcd-all-certs/etcd-peer-*.crt"
+          clientKeyPath: "/rootfs/etc/kubernetes/static-pod-resources/etcd-certs/secrets/etcd-all-certs/etcd-peer-*.key"
+          insecure: true
+          includeHelp: false
+          output: ""
+          whitelist:
+            - '^etcd_server_leader_changes_seen_total$'
+            - '^etcd_server_has_leader$'
+            - '^etcd_server_proposals_committed_total$'
+            - '^etcd_server_proposals_applied_total$'
+            - '^etcd_server_proposals_committed_total$'
+            - '^etcd_server_proposals_pending$'
+            - '^etcd_server_proposals_failed_total$'
+            - '^etcd_disk_wal_fsync_duration_seconds_sum$'
+            - '^etcd_disk_wal_fsync_duration_seconds_count$'
+            - '^etcd_disk_backend_commit_duration_seconds_sum$'
+            - '^etcd_disk_backend_commit_duration_seconds_count$'
+            - '^etcd_network_client_grpc_.*$'
+            - '^grpc_server_handled_total$'
+            - '^etcd_network_peer_round_trip_time_seconds_bucket$'
+            - '^process_cpu_seconds_total$'
+            - '^process_resident_memory_bytes$'
+            - '^process_virtual_memory_bytes$'
+            - '^process_open_fds$'
+            - '^process_max_fds$'
+            - '^etcd_disk_backend_commit_duration_seconds_bucket$'
+            - '^etcd_disk_wal_fsync_duration_seconds_bucket$'
+          backlist: []
+      kubernetesEvents:
+        disabled: false
+        type: "openshift_events"
+        index: ""
+        output: ""
+        excludeManagedFields: true
+      kubernetesWatch:
+        "pods":
+          disabled: false
+          refresh: 10m
+          apiVersion: v1
+          kind: Pod
+          namespace: ""
+          type: "openshift_objects"
+          index: ""
+          output: ""
+          modifyValues: []
+          excludeManagedFields: true
+        "resourcequota":
+          disabled: false
+          refresh: 10m
+          apiVersion: v1
+          kind: ResourceQuota
+          namespace: ""
+          type: "openshift_objects"
+          index: ""
+          output: ""
+          modifyValues: []
+          excludeManagedFields: true
+        "nodes":
+          disabled: false
+          refresh: 10m
+          apiVersion: v1
+          kind: Node
+          namespace: ""
+          type: "openshift_objects"
+          index: ""
+          output: ""
+          modifyValues: []
+          excludeManagedFields: true
+        "clusterresourcequota":
+          disabled: false
+          refresh: 10m
+          apiVersion: quota.openshift.io/v1
+          kind: ClusterResourceQuota
+          namespace: ""
+          type: "openshift_objects"
+          index: ""
+          output: ""
+          modifyValues: []
+          excludeManagedFields: true

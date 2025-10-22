@@ -1,0 +1,34 @@
+{{- if .Capabilities.APIVersions.Has "security.openshift.io/v1" -}}
+{{- if .Values.scc.create }}
+kind: SecurityContextConstraints
+apiVersion: security.openshift.io/v1
+metadata:
+  name: {{ .Values.scc.name | default .Release.Name }}
+allowHostDirVolumePlugin: true
+allowHostIPC: true
+allowHostNetwork: true
+allowHostPID: true
+allowHostPorts: true
+allowPrivilegeEscalation: true
+allowPrivilegedContainer: true
+readOnlyRootFilesystem: false
+allowedCapabilities:
+  - '*'
+allowedUnsafeSysctls:
+  - '*'
+fsGroup:
+  type: RunAsAny
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: RunAsAny
+supplementalGroups:
+  type: RunAsAny
+seccompProfiles:
+  - '*'
+users:
+  - system:serviceaccount:{{ .Release.Namespace }}:{{ .Values.collectord.serviceAccount.name | default .Release.Name }}
+volumes:
+  - '*'
+{{- end }}
+{{- end }}

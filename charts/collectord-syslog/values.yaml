@@ -1,0 +1,188 @@
+# Only in case of OpenShift
+scc:
+  create: true
+  name: ""
+
+collectord:
+  image:
+    repository: docker.io/outcoldsolutions/collectorforkubernetes
+  
+  clusterRole:
+    name: ""
+    create: true
+    rules:
+    - apiGroups:     ['extensions']
+      resources:     ['podsecuritypolicies']
+      verbs:         ['use']
+      resourceNames: ['privileged']
+  
+  configuration:
+    general:
+      # IMPORTANT: Please review license https://www.outcoldsolutions.com/docs/license-agreement/
+      # and accept license by changing the value to *true*
+      acceptLicense: false
+      license: ""
+      dataPath: "./data/"
+      logLevel: info
+      httpServerBinding: ""
+      httpServerLog: false
+      telemetryEndpoint: "https://license.outcold.solutions/telemetry/"
+      licenseEndpoint: "https://license.outcold.solutions/license/"
+      licenseServerProxyUrl: ""
+      licenseServerProxyBasicAuth: ""
+      hostname: ""
+      defaultOutput: "syslog"
+      fileInputBufferSize: "256b"
+      fileInputLineMaxSize: "1mb"
+      fields:
+        cluster: "-"
+      ec2Metadata: {}
+      annotationsSubdomain: "syslog"
+      thruputPerSecond: ""
+      tooOldEvents: ""
+      tooNewEvents: ""
+      autoSkipGzipFiles: true
+      kubernetes:
+        serviceURL: ""
+        nodeName: ""
+        tokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+        certPath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        timeout: 30m
+        metadataTTL: 30s
+        volumesRootDir: /rootfs/var/lib/kubelet/
+        includeAnnotations: []
+        excludeLabels: []
+        watch:
+          - 'v1/namespace'
+          - 'apps/v1/deployment'
+          - 'collectord.io/v1/configuration'
+        watchImplementation: 2
+      crio:
+        url: unix:///rootfs/var/run/crio/crio.sock
+        timeout: 1m
+      containerd:
+        runtimePath: /rootfs/var/run/containerd
+        namespace: k8s.io
+    licenseClient:
+      url: ""
+      basicAuth: ""
+      insecure: false
+      capath: ""
+      caname: ""
+      proxyUrl: ""
+      proxyBasicAuth: ""
+    pipeJoin:
+      disabled: false
+      maxInterval: 100ms
+      maxWait: 1s
+      maxSize: 1MB
+      patternRegex: '^[^\s]'
+    pipeReplace: []
+    pipeHash: []
+    
+    outputs:
+      syslog:
+        default: 
+          network: "tcp"
+          address: ""
+
+    # Input configurations
+    inputs:
+      containerLogs:
+        disabled: false
+        type: "k8s_logs"
+        "syslog.format": '{type}|{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}|{cluster}|{host}|{namespace}|{pod_id}|{pod_name}|{container_name}|{stream}|{message}'
+        path: "/rootfs/var/lib/docker/containers/"
+        crioPath: "/rootfs/var/log/pods/"
+        pollingInterval: 250ms
+        walkingInterval: 5s
+        verboseFields: false
+        joinPartialEvents: true
+        stripTerminalEscapeSequences: false
+        stripTerminalEscapeSequencesRegex: '(\x1b\[\d{1,3}(;\d{1,3})*m)|(\x07)|(\x1b]\d+(\s\d)?;[^\x07]+\x07)|(.*\x1b\[K)'
+        samplingPercent: -1
+        samplingKey: ""
+        output: ""
+        thruputPerSecond: ""
+        tooOldEvents: ""
+        tooNewEvents: ""
+        
+      applicationLogs:
+        disabled: false
+        root: /rootfs/
+        syncInterval: 5s
+        glob: "*.log*"
+        pollingInterval: 250ms
+        walkingInterval: 5s
+        verboseFields: false
+        type: "k8s_logs"
+        "syslog.format": '{type}|{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}|{cluster}|{host}|{namespace}|{pod_id}|{pod_name}|{container_name}|{file_name}|{message}'
+        eventPatternRegex: '^[^\s]'
+        eventPatternMaxInterval: 100ms
+        eventPatternMaxWait: 1s
+        eventPatternMaxSize: 1MB
+        samplingPercent: -1
+        samplingKey: ""
+        output: ""
+        thruputPerSecond: ""
+        tooOldEvents: ""
+        tooNewEvents: ""
+        maxHoldAfterClose: 1800s
+      
+      hostLogs:
+        "audit-logs":
+          disabled: false
+          controlPlaneOnly: true
+          path: '/rootfs/var/log/kube-apiserver/'
+          glob: 'audit*.log'
+          match: ""
+          recursive: false
+          pollingInterval: 250ms
+          walkingInterval: 5s
+          verboseFields: false
+          type: "k8s_audit_logs"
+          "syslog.format": '{type}|{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}|{cluster}|{message}'
+          dataStream: ""
+          extraction: '(?P<message>.*"stageTimestamp":"(?P<timestamp>[^"]+)".*)'
+          extractionMessageField: 'message'
+          timestampField: 'timestamp'
+          timestampFormat: '2006-01-02T15:04:05.999999999Z07:00'
+          timestampLocation: ""
+          samplingPercent: -1
+          samplingKey: ""
+          output: ""
+          thruputPerSecond: ""
+          tooOldEvents: ""
+          tooNewEvents: ""
+          eventPattern: ""
+          blacklist: []
+          whitelist: []
+      
+      journald:
+        disabled: false
+        path:
+          persistent: /rootfs/var/log/journal/
+          volatile: /rootfs/run/log/journal/
+        pollingInterval: 250ms
+        startFromRel: ""
+        type: "k8s_host_logs"
+        "syslog.format": "{type}|{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}|{cluster}|{host}|journald|{message}"
+        samplingPercent: -1
+        samplingKey: ""
+        reopenInterval: 1h
+        output: ""
+        thruputPerSecond: ""
+        tooOldEvents: ""
+        tooNewEvents: ""
+        eventPattern: '^[^\s]'
+        blacklist: []
+        whitelist: []
+        spawnExternalProcess: false
+        
+      kubernetesEvents:
+        disabled: false
+        type: "k8s_events"
+        "syslog.format": '{type}|{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}|{cluster}|{message}'
+        output: ""
+        excludeManagedFields: true
+      
