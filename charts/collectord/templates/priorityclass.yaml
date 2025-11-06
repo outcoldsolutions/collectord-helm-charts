@@ -3,5 +3,7 @@ apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
   name: {{ .Values.priorityClass.name | default (printf "%s-critical" .Release.Name) }}
+  labels:
+    {{- include "collectord.labels" . | nindent 4 }}
 value: {{ .Values.priorityClass.value }}
 {{- end }}

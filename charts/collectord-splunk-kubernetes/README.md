@@ -89,6 +89,9 @@ After that we can remove values that we provided in the secret file in the `my_v
 
 ```yaml
 collectord:
+  secrets:
+    - name: collectord-secret
+    
   configuration:
     general: 
       acceptLicense: true

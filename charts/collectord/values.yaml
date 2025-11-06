@@ -1,7 +1,14 @@
 # Default values for collectord.
 # This is a YAML-formatted file.
 # Declare variables to be substituted into your templates.
-  
+
+# Common labels applied to all resources
+commonLabels: {}
+  # Example:
+  # environment: production
+  # team: platform
+  # cost-center: engineering
+
 # Image settings
 image:
   # OpenShift: docker.io/outcoldsolutions/collectorforopenshift
@@ -50,6 +57,43 @@ configMap:
   daemonsetAdditionalFiles: {}
   daemonsetMasterAdditionalFiles: {}
   deploymentAdditionalFiles: {}
+
+# Volume mounts for CA certificates and other files
+volumeMounts:
+  # Example for CA certificates:
+  # - name: ca-certificates
+  #   mountPath: /etc/ssl/certs/ca-bundle.crt
+  #   subPath: ca-bundle.crt
+  #   configMap:
+  #     name: ca-certificates
+  #   secret: {}  # Use either configMap or secret, not both
+  # - name: custom-config
+  #   mountPath: /config/custom
+  #   secret:
+  #     secretName: custom-config
+  daemonset: []
+  daemonsetMaster: []
+  deployment: []
+
+# Projected volumes for advanced configuration scenarios
+projectedVolumes:
+  # Example:
+  # - name: combined-config
+  #   mountPath: /config/projected
+  #   sources:
+  #     - configMap:
+  #         name: config1
+  #         items:
+  #           - key: config.yaml
+  #             path: config1.yaml
+  #     - secret:
+  #         name: secret1
+  #         items:
+  #           - key: password
+  #             path: password.txt
+  daemonset: []
+  daemonsetMaster: []
+  deployment: []
     
 mountLocalTime: true
 mountRootfsAsReadOnly: false
@@ -67,6 +111,13 @@ daemonset:
     # Example:
     # component: "collector"
     # tier: "monitoring"
+
+  # Pod selector labels (used for matchLabels in selector)
+  # These labels will be automatically applied to pods as well
+  selectorLabels: {}
+    # Example:
+    # app.kubernetes.io/component: worker
+    # app.kubernetes.io/part-of: collectord
 
   # Pod-level annotations and labels (applied to pod template)
   podAnnotations: {}
@@ -117,6 +168,13 @@ daemonsetMaster:
     # component: "collector-master"
     # tier: "monitoring"
 
+  # Pod selector labels (used for matchLabels in selector)
+  # These labels will be automatically applied to pods as well
+  selectorLabels: {}
+    # Example:
+    # app.kubernetes.io/component: master
+    # app.kubernetes.io/part-of: collectord
+
   # Pod-level annotations and labels (applied to pod template)
   podAnnotations: {}
     # Example:
@@ -166,6 +224,13 @@ deployment:
     # Example:
     # component: "collector-addon"
     # tier: "monitoring"
+
+  # Pod selector labels (used for matchLabels in selector)
+  # These labels will be automatically applied to pods as well
+  selectorLabels: {}
+    # Example:
+    # app.kubernetes.io/component: addon
+    # app.kubernetes.io/part-of: collectord
 
   # Pod-level annotations and labels (applied to pod template)
   podAnnotations: {}
