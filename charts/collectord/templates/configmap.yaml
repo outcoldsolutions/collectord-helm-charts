@@ -1545,7 +1545,7 @@ data:
   {{ $filename }}: |
 {{ $content | indent 4 }}
 {{- end }}
-{{- range $filename, $content := .Values.configMap.daemonsetDeploymentAdditionalFiles }}
+{{- range $filename, $content := .Values.configMap.deploymentAdditionalFiles }}
   {{ $filename }}: |
 {{ $content | indent 4 }}
 {{- end }}
