@@ -1,6 +1,6 @@
 dependencies:
 - name: collectord
   repository: oci://registry-1.docker.io/outcoldsolutions
-  version: 2510.3.1
-digest: sha256:21f14464cfafa1d341f9e2288f68b40ecca7b1e9233469c5708f2ff67c2e3092
-generated: "2026-02-23T09:47:08.963268-05:00"
+  version: 2604.1.1
+digest: sha256:c639a3445d6147043825692b240e20ad40b1598e3ac48909f3587497d3e8c985
+generated: "2026-04-26T19:55:37.450048-04:00"

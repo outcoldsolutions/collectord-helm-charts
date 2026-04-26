@@ -111,6 +111,16 @@ data:
     # For input.files::X and application logs, when glob or match are configured, Collectord can automatically
     # detect gzipped files and skip them (based on the extensions or magic numbers)
     autoSkipGzipFiles = {{ .autoSkipGzipFiles }}
+
+    # Multi-output async publishing. When enabled (default), events routed to
+    # non-default outputs are published asynchronously so that a slow or down
+    # output does not block events destined for other outputs.
+    multioutput.async = {{ index . "multioutput.async" }}
+
+    # Buffer size for the async proxy (default 100). Absorbs transient bursts.
+    # When this buffer and the output's own queue are both full, events are
+    # dropped immediately without blocking the pipeline.
+    multioutput.asyncBufferSize = {{ index . "multioutput.asyncBufferSize" }}
     {{- end }}
     
     {{ with .Values.configuration.licenseClient -}}

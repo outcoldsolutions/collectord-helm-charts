@@ -339,6 +339,8 @@ collectord:
       tooOldEvents: ""
       tooNewEvents: ""
       autoSkipGzipFiles: true
+      "multioutput.async": true
+      "multioutput.asyncBufferSize": 100
       kubernetes:
         serviceURL: ""
         nodeName: ""
