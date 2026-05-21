@@ -10,7 +10,7 @@ Please refer to the documentation about how to forward logs to Syslog (QRadar) [
 
 ## Getting Started
 
-Review and accept [license agreement](https://www.outcoldsolutions.com/docs/license-agreement/). If your organization has not purchased a license, 
+Review and accept [license agreement](https://www.outcoldsolutions.com/legal/license-agreement/). If your organization has not purchased a license, 
 request an evaluation license key with [this automated form](https://www.outcoldsolutions.com/trial/request/). License key will be sent to your email address immediately on request.
 
 Create a file named `my_values.yaml` with the content similar to:
@@ -113,4 +113,4 @@ Please refer to [How to submit a support request?](https://www.outcoldsolutions.
 
 ## License
 
-[OUTCOLD SOLUTIONS SOFTWARE LICENSE AGREEMENT](https://www.outcoldsolutions.com/docs/license-agreement/)
+[OUTCOLD SOLUTIONS SOFTWARE LICENSE AGREEMENT](https://www.outcoldsolutions.com/legal/license-agreement/)

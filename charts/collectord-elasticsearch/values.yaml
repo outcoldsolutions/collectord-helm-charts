@@ -305,7 +305,7 @@ collectord:
   
   configuration:
     general:
-      # IMPORTANT: Please review license https://www.outcoldsolutions.com/docs/license-agreement/
+      # IMPORTANT: Please review license https://www.outcoldsolutions.com/legal/license-agreement/
       # and accept license by changing the value to *true*
       acceptLicense: false
       license: ""

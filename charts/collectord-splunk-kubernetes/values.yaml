@@ -13,7 +13,7 @@ collectord:
   
   configuration:
     general:
-      # IMPORTANT: Please review license https://www.outcoldsolutions.com/docs/license-agreement/
+      # IMPORTANT: Please review license https://www.outcoldsolutions.com/legal/license-agreement/
       # and accept license by changing the value to *true*
       acceptLicense: false
       license: ""
@@ -379,6 +379,37 @@ collectord:
           interval: 1h
           
       prometheus:
+        # Each entry below renders a [input.prometheus::<name>] stanza in
+        # 002-daemonset.conf (controlPlaneOnly: false) or 003-daemonset-master.conf
+        # (controlPlaneOnly: true).
+        #
+        # The "WHERE" of the scrape is controlled by exactly one of three keys
+        # (since 26.04.2 - legacy endpoint-http://<svc>:<port>/path syntax was
+        # removed and now fails fast at config load):
+        #   endpointSlice: <svc>.<ns>  - per-pod fan-out via discovery.k8s.io/v1.EndpointSlice
+        #   service:       <svc>.<ns>  - hit the ClusterIP, kube-proxy load-balances
+        #   endpoint(s):   literal URL(s) - no Kubernetes discovery; the existing
+        #                                   localhost-then-proxy fallback idiom.
+        # When endpointSlice or service is used, set port (number) or portName
+        # (matches EndpointSlice port name), plus scheme (http/https) and path.
+        #
+        # Example - scheduler reached through a headless discovery Service:
+        # "scheduler-via-discovery":
+        #   controlPlaneOnly: true
+        #   disabled: false
+        #   type: "kubernetes_prometheus"
+        #   source: "scheduler"
+        #   interval: "60s"
+        #   timeout: "60s"
+        #   endpointSlice: kube-scheduler-collectorforkubernetes-discovery.kube-system
+        #   port: 10251
+        #   scheme: http
+        #   path: /metrics
+        #   tokenPath: ""
+        #   certPath: ""
+        #   clientCertPath: ""
+        #   insecure: false
+        #   includeHelp: true
         "kubelet":
           controlPlaneOnly: false
           disabled: false

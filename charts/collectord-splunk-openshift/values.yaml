@@ -26,7 +26,7 @@ collectord:
   
   configuration:
     general:
-      # IMPORTANT: Please review license https://www.outcoldsolutions.com/docs/license-agreement/
+      # IMPORTANT: Please review license https://www.outcoldsolutions.com/legal/license-agreement/
       # and accept license by changing the value to *true*
       acceptLicense: false
       license: ""
@@ -333,6 +333,41 @@ collectord:
           interval: 1h
           
       prometheus:
+        # Each entry below renders a [input.prometheus::<name>] stanza in
+        # 002-daemonset.conf (controlPlaneOnly: false) or 003-daemonset-master.conf
+        # (controlPlaneOnly: true).
+        #
+        # The "WHERE" of the scrape is controlled by exactly one of three keys
+        # (since 26.04.2 - legacy endpoint-http://<svc>:<port>/path syntax was
+        # removed and now fails fast at config load):
+        #   endpointSlice: <svc>.<ns>  - per-pod fan-out via discovery.k8s.io/v1.EndpointSlice
+        #   service:       <svc>.<ns>  - hit the ClusterIP, kube-proxy load-balances
+        #   endpoint(s):   literal URL(s) - no Kubernetes discovery; the existing
+        #                                   localhost-then-proxy fallback idiom.
+        # When endpointSlice or service is used, set port (number) or portName
+        # (matches EndpointSlice port name), plus scheme (http/https) and path.
+        #
+        # OpenShift's standard layout fronts the controller-manager with
+        # kube-controller-manager.openshift-kube-controller-manager on port 10257,
+        # and the scheduler with scheduler.openshift-kube-scheduler on port 10259.
+        # Example - controller-manager reached through its Service:
+        # "controller-via-discovery":
+        #   controlPlaneOnly: true
+        #   disabled: false
+        #   type: "openshift_prometheus"
+        #   source: "controller"
+        #   interval: "60s"
+        #   timeout: "60s"
+        #   endpointSlice: kube-controller-manager.openshift-kube-controller-manager
+        #   port: 10257
+        #   scheme: https
+        #   path: /metrics
+        #   tokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+        #   certPath: ""
+        #   clientCertPath: ""
+        #   clientKeyPath: ""
+        #   insecure: true
+        #   includeHelp: false
         "kubelet":
           controlPlaneOnly: false
           disabled: false

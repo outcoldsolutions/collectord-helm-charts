@@ -20,7 +20,7 @@ data:
     {{ with .Values.configuration.general }}
     [general]
 
-    # Please review license https://www.outcoldsolutions.com/docs/license-agreement/
+    # Please review license https://www.outcoldsolutions.com/legal/license-agreement/
     # and accept license by changing the value to *true*
     acceptLicense = {{ .acceptLicense }}
 
@@ -1230,7 +1230,7 @@ data:
     {{ else if (index . "elasticsearch.datastream") }}
     elasticsearch.datastream = {{ index . "elasticsearch.datastream" }}
     {{- end }}
-    
+
     {{ if .source -}}
     # specify Splunk source
     source = {{ .source }}
@@ -1250,7 +1250,14 @@ data:
     # request timeout
     timeout = {{ .timeout }}
 
-    # prometheus endpoint
+    # === WHERE: pick exactly one of endpointSlice, service, or endpoint(s) ===
+    # endpointSlice / service: <name>.<namespace>. Omit the namespace to aggregate cluster-wide.
+    {{ if .endpointSlice -}}
+    endpointSlice = {{ .endpointSlice }}
+    {{- end }}
+    {{ if .service -}}
+    service = {{ .service }}
+    {{- end }}
     {{ if .endpoint -}}
     endpoint = {{ .endpoint }}
     {{- end }}
@@ -1258,6 +1265,20 @@ data:
     {{ range $i, $val := .endpoints }}
     endpoint.{{ add1 $i }} = {{ $val }}
     {{- end }}
+    {{- end }}
+
+    # === HOW: port (number) or portName, plus scheme and path ===
+    {{ if .port -}}
+    port = {{ .port }}
+    {{- end }}
+    {{ if .portName -}}
+    portName = {{ .portName }}
+    {{- end }}
+    {{ if .scheme -}}
+    scheme = {{ .scheme }}
+    {{- end }}
+    {{ if .path -}}
+    path = {{ .path }}
     {{- end }}
 
     # token for "Authorization: Bearer $(cat tokenPath)"
@@ -1268,17 +1289,20 @@ data:
 
     # client certificate for authentication
     clientCertPath = {{ .clientCertPath }}
+    {{ if .clientKeyPath -}}
+    clientKeyPath = {{ .clientKeyPath }}
+    {{- end }}
 
     # Allow invalid SSL server certificate
     insecure = {{ .insecure }}
 
     # include metrics help with the events
     # can be useful to explore prometheus metrics
-    includeHelp = {{ .includeHelp }} 
+    includeHelp = {{ .includeHelp }}
 
     # set output (splunk or devnull, default is [general]defaultOutput)
     output = {{ .output }}
-    
+
     # whitelist or blacklist the metrics
     {{ range $i, $val := .whitelist }}
     whitelist.{{ add1 $i }} = {{ $val }}
@@ -1307,39 +1331,46 @@ data:
     {{ with $value }}
     # disable prometheus kubelet metrics
     disabled = {{ .disabled }}
-    
+
     # override type
     type = {{ .type }}
-    
+
     {{ if (index . "index") -}}
     # specify Splunk index
     index = {{ index . "index" }}
     {{ else if (index . "elasticsearch.datastream") }}
     elasticsearch.datastream = {{ index . "elasticsearch.datastream" }}
     {{- end }}
-    
+
     {{ if .source -}}
     # specify Splunk source
     source = {{ .source }}
     {{ else if (index . "syslog.format") }}
     syslog.format = {{ index . "syslog.format" }}
     {{- end }}
-    
+
     # Override host (environment variables are supported)
     host = {{ .host }}
-    
+
     # Override source
     source = {{ .source }}
-    
+
     # how often to collect prometheus metrics
     interval = {{ .interval }}
-    
+
     # request timeout
     timeout = {{ .timeout }}
-    
-    # Prometheus endpoint, multiple values can be specified:
-    # collectord tries them in order till finding the first working one.
-    {{ if .endpoint }}
+
+    # === WHERE: pick exactly one of endpointSlice, service, or endpoint(s) ===
+    # endpointSlice / service: <name>.<namespace>. Omit the namespace to aggregate cluster-wide.
+    # endpoint.N preserves the localhost-then-proxy fallback idiom.
+    {{ if .endpointSlice -}}
+    endpointSlice = {{ .endpointSlice }}
+    {{- end }}
+    {{ if .service -}}
+    service = {{ .service }}
+    {{- end }}
+    {{ if .endpoint -}}
     endpoint = {{ .endpoint }}
     {{- end }}
     {{ if .endpoints -}}
@@ -1347,27 +1378,41 @@ data:
     endpoint.{{ add1 $i }} = {{ $val }}
     {{- end }}
     {{- end }}
-    
+
+    # === HOW: port (number) or portName, plus scheme and path ===
+    {{ if .port -}}
+    port = {{ .port }}
+    {{- end }}
+    {{ if .portName -}}
+    portName = {{ .portName }}
+    {{- end }}
+    {{ if .scheme -}}
+    scheme = {{ .scheme }}
+    {{- end }}
+    {{ if .path -}}
+    path = {{ .path }}
+    {{- end }}
+
     # token for "Authorization: Bearer $(cat tokenPath)"
     tokenPath = {{ .tokenPath }}
-    
+
     # server certificate for certificate validation
     certPath = {{ .certPath }}
-    
+
     # client certificate for authentication
     clientCertPath = {{ .clientCertPath }}
     clientKeyPath = {{ .clientKeyPath }}
-    
+
     # Allow invalid SSL server certificate
     insecure = {{ .insecure }}
-    
+
     # include metrics help with the events
     # can be useful to explore prometheus metrics
-    includeHelp = {{ .includeHelp }} 
-    
+    includeHelp = {{ .includeHelp }}
+
     # set output (splunk or devnull, default is [general]defaultOutput)
     output = {{ .output }}
-    
+
     # whitelist or blacklist the metrics
     {{ range $i, $val := .whitelist }}
     whitelist.{{ add1 $i }} = {{ $val }}

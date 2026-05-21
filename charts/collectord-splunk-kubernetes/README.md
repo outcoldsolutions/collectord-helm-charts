@@ -13,7 +13,7 @@ Please refer to the documentation on how to install Monitoring Kubernetes applic
 At this point we assume that you have installed Monitoring Kubernetes application in Splunk, and enabled Splunk HTTP Event Collector (HEC). Please refer to
 [Monitoring Kubernetes - Installation](https://www.outcoldsolutions.com/docs/monitoring-kubernetes/installation/) on how to do that.
 
-Review and accept [license agreement](https://www.outcoldsolutions.com/docs/license-agreement/). If your organization has not purchased a license, 
+Review and accept [license agreement](https://www.outcoldsolutions.com/legal/license-agreement/). If your organization has not purchased a license, 
 request an evaluation license key with [this automated form](https://www.outcoldsolutions.com/trial/request/). License key will be sent to your email address immediately on request.
 
 Create a file named `my_values.yaml` with the content similar to:
@@ -224,4 +224,4 @@ Please refer to [How to submit a support request?](https://www.outcoldsolutions.
 
 ## License
 
-[OUTCOLD SOLUTIONS SOFTWARE LICENSE AGREEMENT](https://www.outcoldsolutions.com/docs/license-agreement/)
+[OUTCOLD SOLUTIONS SOFTWARE LICENSE AGREEMENT](https://www.outcoldsolutions.com/legal/license-agreement/)

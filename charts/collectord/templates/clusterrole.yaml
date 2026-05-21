@@ -12,6 +12,7 @@ rules:
     - batch
     - extensions
     - rbac.authorization.k8s.io
+    - discovery.k8s.io
     resources:
     - pods
     - nodes
@@ -19,7 +20,7 @@ rules:
     - cronjobs
     - daemonsets
     - deployments
-    - endpoints
+    - endpointslices
     - events
     - jobs
     - namespaces

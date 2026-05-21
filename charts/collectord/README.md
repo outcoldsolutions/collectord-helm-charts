@@ -12,4 +12,4 @@ Base chart for Collectord
 
 ## License
 
-[OUTCOLD SOLUTIONS SOFTWARE LICENSE AGREEMENT](https://www.outcoldsolutions.com/docs/license-agreement/)
+[OUTCOLD SOLUTIONS SOFTWARE LICENSE AGREEMENT](https://www.outcoldsolutions.com/legal/license-agreement/)
