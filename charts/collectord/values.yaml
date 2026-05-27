@@ -15,7 +15,7 @@ image:
   # Kubernetes: docker.io/outcoldsolutions/collectorforkubernetes
   # To use RHEL Certified Image for OpenShift, specify registry.connect.redhat.com/outcoldsolutions/collectorforopenshift
   repository: docker.io/outcoldsolutions/collectorforkubernetes
-  tag: "26.04.2"
+  tag: "26.04.3"
   pullPolicy: Always
 
 # Service Account
