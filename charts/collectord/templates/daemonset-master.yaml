@@ -48,6 +48,14 @@ spec:
       - name: {{ .Release.Name }}
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
+        {{- with .Values.daemonsetMaster.livenessProbe }}
+        livenessProbe:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.daemonsetMaster.readinessProbe }}
+        readinessProbe:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         securityContext:
           runAsUser: 0
           privileged: true

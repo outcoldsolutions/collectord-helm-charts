@@ -31,12 +31,25 @@ data:
     # log level (accepted values are trace, debug, info, warn, error, fatal)
     logLevel = {{ .logLevel }}
 
-    # http server gives access to two endpoints
-    # /healthz
-    # /metrics/json
-    # /metrics/prometheus
+    # Internal http server - serves the liveness (/healthz) and readiness (/readyz)
+    # probes. DaemonSets run on the host network, so bind to loopback (127.0.0.1:11888)
+    # to keep the endpoints off the node IP; the kubelet still reaches them via
+    # httpGet.host 127.0.0.1. The addon runs off the host network and overrides the
+    # bind to 0.0.0.0 in 004-addon.conf so the kubelet can reach it on the pod IP.
     # httpServerBinding = 0.0.0.0:11888
     httpServerBinding = {{ .httpServerBinding }}
+    {{- if hasKey . "httpServerEndpoints.health" }}
+    httpServerEndpoints.health = {{ index . "httpServerEndpoints.health" }}
+    {{- end }}
+    {{- if hasKey . "httpServerEndpoints.ready" }}
+    httpServerEndpoints.ready = {{ index . "httpServerEndpoints.ready" }}
+    {{- end }}
+    {{- if hasKey . "httpServerEndpoints.metrics" }}
+    httpServerEndpoints.metrics = {{ index . "httpServerEndpoints.metrics" }}
+    {{- end }}
+    {{- if hasKey . "httpServerEndpoints.pprof" }}
+    httpServerEndpoints.pprof = {{ index . "httpServerEndpoints.pprof" }}
+    {{- end }}
 
     # log requests to the http server
     httpServerLog = {{ .httpServerLog }}
@@ -1510,6 +1523,12 @@ data:
     [general]
     # addons can be run in parallel with agents
     addon = true
+    {{- if .Values.configuration.general.httpServerBinding }}
+
+    # The addon runs off the host network, so the kubelet probes /healthz and /readyz
+    # on the pod IP - bind 0.0.0.0 here (overrides the loopback default in 001-general.conf).
+    httpServerBinding = 0.0.0.0:11888
+    {{- end }}
     
     {{ with .Values.configuration.inputs.kubernetesEvents }}
     [input.kubernetes_events]

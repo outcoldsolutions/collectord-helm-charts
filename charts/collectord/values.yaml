@@ -15,7 +15,7 @@ image:
   # Kubernetes: docker.io/outcoldsolutions/collectorforkubernetes
   # To use RHEL Certified Image for OpenShift, specify registry.connect.redhat.com/outcoldsolutions/collectorforopenshift
   repository: docker.io/outcoldsolutions/collectorforkubernetes
-  tag: "26.04.3"
+  tag: "26.04.4"
   pullPolicy: Always
 
 # Service Account
@@ -102,6 +102,12 @@ mountRootfsAsReadOnly: false
 daemonset:
   create: true
 
+  # Liveness/readiness probes for the /healthz and /readyz endpoints (Collectord 26.04.4+).
+  # Empty by default; the Splunk charts set them. Requires the internal http server enabled
+  # via configuration.general (httpServerBinding + httpServerEndpoints.health/ready).
+  livenessProbe: {}
+  readinessProbe: {}
+
   # Workload-level annotations and labels (applied to DaemonSet resource)
   annotations: {}
     # Example:
@@ -157,6 +163,12 @@ daemonset:
 # DaemonSet configuration for master nodes
 daemonsetMaster:
   create: true
+
+  # Liveness/readiness probes for the /healthz and /readyz endpoints (Collectord 26.04.4+).
+  # Empty by default; the Splunk charts set them. Requires the internal http server enabled
+  # via configuration.general (httpServerBinding + httpServerEndpoints.health/ready).
+  livenessProbe: {}
+  readinessProbe: {}
 
   # Workload-level annotations and labels (applied to DaemonSet resource)
   annotations: {}
@@ -214,6 +226,12 @@ daemonsetMaster:
 # Deployment configuration for addon
 deployment:
   create: true
+
+  # Liveness/readiness probes for the /healthz and /readyz endpoints (Collectord 26.04.4+).
+  # Empty by default; the Splunk charts set them. The addon runs off the host network, so
+  # its probes use the pod IP (no httpGet.host) and 004-addon.conf binds 0.0.0.0:11888.
+  livenessProbe: {}
+  readinessProbe: {}
 
   # Workload-level annotations and labels (applied to Deployment resource)
   annotations: {}
