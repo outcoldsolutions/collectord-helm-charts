@@ -36,6 +36,10 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       hostNetwork: true
       serviceAccountName: {{ .Values.serviceAccount.name | default .Release.Name }}
+      {{- with .Values.daemonsetMaster.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.daemonsetMaster.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}

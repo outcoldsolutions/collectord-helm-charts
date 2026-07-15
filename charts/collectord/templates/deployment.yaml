@@ -33,6 +33,18 @@ spec:
     spec:
       priorityClassName: {{ .Values.priorityClass.name | default (printf "%s-critical" .Release.Name) }}
       serviceAccountName: {{ .Values.serviceAccount.name | default .Release.Name }}
+      {{- with .Values.deployment.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployment.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
       containers:
       - name: {{ .Release.Name }}
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}

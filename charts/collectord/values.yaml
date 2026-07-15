@@ -144,6 +144,11 @@ daemonset:
       cpu: 500m
       memory: 256Mi
 
+  # Node selector for daemonset pods
+  nodeSelector: {}
+    # Example:
+    # kubernetes.io/os: linux
+
   # Affinity for daemonset pods
   affinity:
     nodeAffinity:
@@ -207,6 +212,11 @@ daemonsetMaster:
       cpu: 500m
       memory: 256Mi
 
+  # Node selector for daemonset-master pods
+  nodeSelector: {}
+    # Example:
+    # kubernetes.io/os: linux
+
   # Affinity for daemonset-master pods
   affinity:
     nodeAffinity:
@@ -269,6 +279,31 @@ deployment:
     requests:
       cpu: 200m
       memory: 64Mi
+
+  # Node selector for addon pod
+  nodeSelector: {}
+    # Example:
+    # kubernetes.io/os: linux
+
+  # Affinity for addon pod
+  affinity: {}
+    # Example (prefer scheduling on the AKS system node pool):
+    # nodeAffinity:
+    #   preferredDuringSchedulingIgnoredDuringExecution:
+    #   - weight: 100
+    #     preference:
+    #       matchExpressions:
+    #       - key: kubernetes.azure.com/mode
+    #         operator: In
+    #         values:
+    #         - system
+
+  # Tolerations for addon pod
+  tolerations: []
+    # Example (allow scheduling on a tainted system node pool):
+    # - key: "CriticalAddonsOnly"
+    #   operator: "Exists"
+    #   effect: "NoSchedule"
 
 configuration:
   general: {}
