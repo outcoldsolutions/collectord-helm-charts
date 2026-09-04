@@ -275,8 +275,64 @@ collectord:
           "index_patterns": [
             "logs-collectord-failed-${COLLECTORD_VERSION}"]
         }
+
     
-  
+  daemonset:
+    livenessProbe:
+      httpGet:
+        host: 127.0.0.1
+        path: /healthz
+        port: 11888
+      initialDelaySeconds: 120
+      periodSeconds: 60
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readinessProbe:
+      httpGet:
+        host: 127.0.0.1
+        path: /readyz
+        port: 11888
+      initialDelaySeconds: 10
+      periodSeconds: 15
+      timeoutSeconds: 5
+      failureThreshold: 3
+  daemonsetMaster:
+    livenessProbe:
+      httpGet:
+        host: 127.0.0.1
+        path: /healthz
+        port: 11888
+      initialDelaySeconds: 120
+      periodSeconds: 60
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readinessProbe:
+      httpGet:
+        host: 127.0.0.1
+        path: /readyz
+        port: 11888
+      initialDelaySeconds: 10
+      periodSeconds: 15
+      timeoutSeconds: 5
+      failureThreshold: 3
+  deployment:
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 11888
+      initialDelaySeconds: 120
+      periodSeconds: 60
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readinessProbe:
+      httpGet:
+        path: /readyz
+        port: 11888
+      initialDelaySeconds: 10
+      periodSeconds: 15
+      timeoutSeconds: 5
+      failureThreshold: 3
+
   configuration:
     general:
       # IMPORTANT: Please review license https://www.outcoldsolutions.com/legal/license-agreement/
@@ -285,7 +341,11 @@ collectord:
       license: ""
       dataPath: "./data/"
       logLevel: info
-      httpServerBinding: ""
+      httpServerBinding: "127.0.0.1:11888"
+      "httpServerEndpoints.health": true
+      "httpServerEndpoints.ready": true
+      "httpServerEndpoints.metrics": false
+      "httpServerEndpoints.pprof": false
       httpServerLog: false
       telemetryEndpoint: "https://license.outcold.solutions/telemetry/"
       licenseEndpoint: "https://license.outcold.solutions/license/"
@@ -293,7 +353,7 @@ collectord:
       licenseServerProxyBasicAuth: ""
       hostname: ""
       defaultOutput: "elasticsearch"
-      fileInputBufferSize: "256b"
+      fileInputBufferSize: "8kb"
       fileInputLineMaxSize: "1mb"
       fields:
         "ecs.version": "8.0.0"

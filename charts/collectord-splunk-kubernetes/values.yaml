@@ -92,7 +92,7 @@ collectord:
       licenseServerProxyBasicAuth: ""
       hostname: ""
       defaultOutput: "splunk"
-      fileInputBufferSize: "256b"
+      fileInputBufferSize: "8kb"
       fileInputLineMaxSize: "1mb"
       fields:
         kubernetes_cluster: "-"

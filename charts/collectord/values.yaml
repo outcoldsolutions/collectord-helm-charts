@@ -136,6 +136,12 @@ daemonset:
     # version: "v1.0.0"
     # environment: "production"
   
+  ports: []
+    # Example:
+    # - name: metrics
+    #   containerPort: 11888
+    #   protocol: TCP
+
   resources:
     limits:
       cpu: 2000m
@@ -203,6 +209,12 @@ daemonsetMaster:
     # version: "v1.0.0"
     # environment: "production"
   
+  ports: []
+    # Example:
+    # - name: metrics
+    #   containerPort: 11888
+    #   protocol: TCP
+
   # Resources
   resources:
     limits:
@@ -271,6 +283,20 @@ deployment:
     # version: "v1.0.0"
     # environment: "production"
   
+  # Container ports to declare on the collectord container. Empty by default -
+  # Collectord does not need a declared port to work, but Prometheus pod discovery
+  # builds one target per declared port, and scrape configurations that match the
+  # prometheus.io/port annotation against the pod's declared ports drop a pod that
+  # declares none. Declare the internal http server port here when you scrape
+  # /metrics/prometheus - and enable it in configuration.general
+  # (httpServerEndpoints.metrics = true). The addon runs off the host network, so
+  # 004-addon.conf already binds 0.0.0.0:11888 and no hostPort is claimed.
+  ports: []
+    # Example:
+    # - name: metrics
+    #   containerPort: 11888
+    #   protocol: TCP
+
   # Resources
   resources:
     limits:

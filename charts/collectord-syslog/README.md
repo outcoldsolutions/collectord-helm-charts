@@ -107,6 +107,101 @@ helm install collectorforkubernetes-syslog \
 > NOTE: Collectord reads all files with `.conf` extension from the `/config` directory and subdirectories. It will sort them by name in ascending order before reading them.
 > In a case of file names `001-general.conf` and `101-general.conf`, all values in `101-general.conf` will override values in `001-general.conf`.
 
+### Collecting Collectord's own metrics
+
+Collectord serves its internal metrics in Prometheus format on `/metrics/prometheus`, from the same
+internal http server that serves the health probes. This chart ships that server switched off
+(`httpServerBinding: ""`). To let Prometheus collect the metrics, bind the server on an address the
+scraper can reach, enable the metrics endpoint, declare the port on each workload, and annotate the
+pods:
+
+```yaml
+collectord:
+  configuration:
+    general:
+      httpServerBinding: "0.0.0.0:11888"
+      "httpServerEndpoints.metrics": true
+
+  daemonset:
+    ports:
+      - name: metrics
+        containerPort: 11888
+        protocol: TCP
+    podAnnotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "11888"
+      prometheus.io/path: "/metrics/prometheus"
+
+  daemonsetMaster:
+    ports:
+      - name: metrics
+        containerPort: 11888
+        protocol: TCP
+    podAnnotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "11888"
+      prometheus.io/path: "/metrics/prometheus"
+
+  deployment:
+    ports:
+      - name: metrics
+        containerPort: 11888
+        protocol: TCP
+    podAnnotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "11888"
+      prometheus.io/path: "/metrics/prometheus"
+```
+
+Declaring `ports` is what makes the pods discoverable. Pod discovery creates one target per declared
+container port, and a pod that declares none is discovered at its pod IP with no port at all. Scrape
+configurations that build the address from the `prometheus.io/port` annotation work either way, but
+the ones that match that annotation against the pod's declared ports drop the pod when there is
+nothing to match.
+
+Both DaemonSets run on the host network, so binding the server exposes `/metrics/prometheus` — along
+with `/healthz` and `/readyz` — on every node's IP. Restrict access at the node level (a host
+firewall, or your CNI's host-endpoint policy): an ordinary pod-selector NetworkPolicy does not
+reliably cover host-network pods, because most CNIs treat traffic to the node IP as node traffic
+rather than pod traffic.
+
+Kubernetes also defaults `hostPort` to `containerPort` for host-network pods, so declaring `11888`
+claims it on every node, and a collision leaves the pod `Pending` rather than failing at bind time.
+If you run a second Collectord deployment on the same nodes, give its DaemonSets their own port in
+both `httpServerBinding` and `ports`. The addon runs off the host network, so it keeps port `11888`
+either way.
+
+Setting a binding also turns on `/healthz` and `/readyz`, which are enabled by default. This chart
+defines no probes, so nothing depends on them until you add some.
+
+#### Known issue: Prometheus 3 marks the target down
+
+Collectord serves `/metrics/prometheus` with `Content-Type: application/text`, which Prometheus 3
+rejects. The target is discovered and then marked down with
+
+```
+received unsupported Content-Type "application/text" and no fallback_scrape_protocol specified for target
+```
+
+even though the endpoint is healthy and `curl` returns metrics. Prometheus 2 silently fell back to
+its classic text parser, which is why this went unnoticed. Forwarding to the output is never
+affected — only the scrape of Collectord's own metrics.
+
+Until a release ships the corrected header, tell the scraper which protocol to assume:
+
+```yaml
+# Prometheus scrape_config
+fallback_scrape_protocol: PrometheusText0.0.4
+```
+
+```yaml
+# Prometheus Operator ServiceMonitor / PodMonitor
+spec:
+  fallbackScrapeProtocol: PrometheusText0.0.4
+```
+
+`httpServerEndpoints.pprof` stays off. Leave it that way unless support asks you for a profile.
+
 ## Support
 
 Please refer to [How to submit a support request?](https://www.outcoldsolutions.com/docs/faq/#how-to-submit-a-support-request)

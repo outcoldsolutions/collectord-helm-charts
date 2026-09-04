@@ -82,7 +82,8 @@ data:
     # Use devnull by default if you don't want to redirect data
     defaultOutput = {{ .defaultOutput }}
 
-    # Default buffer size for file input
+    # Buffer size for file reads. 8k matches the common filesystem block size and
+    # cuts the number of read syscalls substantially versus the historical 256b.
     fileInputBufferSize = {{ .fileInputBufferSize }}
 
     # Maximum size of one line the file reader can read

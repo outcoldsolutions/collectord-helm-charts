@@ -32,7 +32,7 @@ collectord:
       licenseServerProxyBasicAuth: ""
       hostname: ""
       defaultOutput: "syslog"
-      fileInputBufferSize: "256b"
+      fileInputBufferSize: "8kb"
       fileInputLineMaxSize: "1mb"
       fields:
         cluster: "-"

@@ -52,6 +52,10 @@ spec:
       - name: {{ .Release.Name }}
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
+        {{- with .Values.daemonsetMaster.ports }}
+        ports:
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- with .Values.daemonsetMaster.livenessProbe }}
         livenessProbe:
           {{- toYaml . | nindent 10 }}

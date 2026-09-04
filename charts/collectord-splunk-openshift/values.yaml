@@ -105,7 +105,7 @@ collectord:
       licenseServerProxyBasicAuth: ""
       hostname: ""
       defaultOutput: "splunk"
-      fileInputBufferSize: "256b"
+      fileInputBufferSize: "8kb"
       fileInputLineMaxSize: "1mb"
       fields:
         openshift_cluster: "-"
