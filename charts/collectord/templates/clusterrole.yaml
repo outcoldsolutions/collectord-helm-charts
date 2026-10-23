@@ -6,57 +6,17 @@ metadata:
   labels:
     {{- include "collectord.labels" . | nindent 4 }}
 rules:
+{{- toYaml .Values.clusterRole.baseRules | nindent 2 }}
+{{- if .Values.clusterRole.userOutputSecrets }}
+  # A SplunkOutput with spec.tokenFromSecret reads the one Secret it names.
   - apiGroups:
     - ""
-    - apps
-    - batch
-    - extensions
-    - rbac.authorization.k8s.io
-    - discovery.k8s.io
     resources:
-    - pods
-    - nodes
-    - alertmanagers
-    - cronjobs
-    - daemonsets
-    - deployments
-    - endpointslices
-    - events
-    - jobs
-    - namespaces
-    - nodes
-    - nodes/metrics
-    - nodes/proxy
-    - pods
-    - replicasets
-    - replicationcontrollers
-    - scheduledjobs
-    - services
     - secrets
-    - statefulsets
-    - persistentvolumeclaims
-    - resourcequotas
-    - clusterroles
     verbs:
     - get
-    - list
-    - watch
-  - apiGroups:
-    - collectord.io
-    resources:
-    - splunkoutputs
-    - configurations
-    verbs:
-    - get
-    - list
-    - watch
-  - nonResourceURLs:
-    - /metrics
-    verbs:
-    - get
-    apiGroups: []
-    resources: []
-  {{- if .Values.clusterRole.rules -}}
-    {{ toYaml .Values.clusterRole.rules | nindent 2 -}}
-  {{- end }}
+{{- end }}
+{{- with .Values.clusterRole.rules }}
+{{- toYaml . | nindent 2 }}
+{{- end }}
 {{- end }}

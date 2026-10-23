@@ -4,37 +4,43 @@ scc:
   
 collectord:
   image:
-    repository: docker.io/outcoldsolutions/collectorforopenshift
-    # To use RHEL certified image, use the following line
-    # repository: registry.connect.redhat.com/outcoldsolutions/collectorforopenshift
-    
-  # RBAC settings
+    repository: registry.outcold.solutions/outcoldsolutions/collectorforopenshift
+    # Docker Hub: docker.io/outcoldsolutions/collectorforopenshift
+    # Red Hat certified image: registry.connect.redhat.com/outcoldsolutions/collectorforopenshift
+
+  environment: openshift
+
+  # The master label: masters installed before 4.12 may lack the control-plane one.
+  controlPlaneNodeSelector: node-role.kubernetes.io/master
+
   clusterRole:
     name: ""
     create: true
     rules:
     - apiGroups:
       - apps.openshift.io
-      - quota.openshift.io
       resources:
-      - clusterresourcequotas
       - deploymentconfigs
       verbs:
       - get
       - list
       - watch
-  
-  # Liveness/readiness probes for the /healthz and /readyz endpoints (26.04.4+).
-  # DaemonSets run on the host network, so the kubelet probes them on the loopback
-  # bind via httpGet.host 127.0.0.1; the addon runs off the host network and is
-  # probed on the pod IP. Requires the http server enabled in configuration.general
-  # below (httpServerBinding + httpServerEndpoints.health/ready).
+    - apiGroups:
+      - quota.openshift.io
+      resources:
+      - clusterresourcequotas
+      verbs:
+      - get
+      - list
+      - watch
+
+  # Liveness/readiness probes on /healthz and /readyz, at configuration.general's
+  # httpServerBinding port; set httpGet.port when a configMap file sets the binding.
   daemonset:
     livenessProbe:
       httpGet:
         host: 127.0.0.1
         path: /healthz
-        port: 11888
       initialDelaySeconds: 120
       periodSeconds: 60
       timeoutSeconds: 5
@@ -43,26 +49,6 @@ collectord:
       httpGet:
         host: 127.0.0.1
         path: /readyz
-        port: 11888
-      initialDelaySeconds: 10
-      periodSeconds: 15
-      timeoutSeconds: 5
-      failureThreshold: 3
-  daemonsetMaster:
-    livenessProbe:
-      httpGet:
-        host: 127.0.0.1
-        path: /healthz
-        port: 11888
-      initialDelaySeconds: 120
-      periodSeconds: 60
-      timeoutSeconds: 5
-      failureThreshold: 3
-    readinessProbe:
-      httpGet:
-        host: 127.0.0.1
-        path: /readyz
-        port: 11888
       initialDelaySeconds: 10
       periodSeconds: 15
       timeoutSeconds: 5
@@ -71,7 +57,6 @@ collectord:
     livenessProbe:
       httpGet:
         path: /healthz
-        port: 11888
       initialDelaySeconds: 120
       periodSeconds: 60
       timeoutSeconds: 5
@@ -79,7 +64,6 @@ collectord:
     readinessProbe:
       httpGet:
         path: /readyz
-        port: 11888
       initialDelaySeconds: 10
       periodSeconds: 15
       timeoutSeconds: 5
@@ -105,6 +89,7 @@ collectord:
       licenseServerProxyBasicAuth: ""
       hostname: ""
       defaultOutput: "splunk"
+      defaultIndexType: events
       fileInputBufferSize: "8kb"
       fileInputLineMaxSize: "1mb"
       fields:
@@ -114,6 +99,7 @@ collectord:
       thruputPerSecond: ""
       tooOldEvents: ""
       tooNewEvents: ""
+      fieldsSeparator: ""
       autoSkipGzipFiles: true
       "multioutput.async": true
       "multioutput.asyncBufferSize": 100
@@ -127,11 +113,12 @@ collectord:
         volumesRootDir: /rootfs/var/lib/kubelet/
         includeAnnotations: []
         excludeLabels: []
+        crossNamespaceUserOutputs: false
+        # Not DeploymentConfigs (deprecated since 4.14); a pod's DeploymentConfig is still its owner.
         watch:
           - 'v1/namespace'
-          - 'apps.openshift.io/v1/deploymentconfig'
+          - 'apps/v1/deployment'
           - 'collectord.io/v1/configuration'
-        watchImplementation: 2
       crio:
         url: unix:///rootfs/var/run/crio/crio.sock
         timeout: 1m
@@ -151,13 +138,26 @@ collectord:
       patternRegex: '^[^\s]'
     pipeReplace: []
     pipeHash: []
+    # Log lines no thruput cap holds back and no sampling drops, per workload; over a spent cap
+    # a selected workload drops its other lines. Select by openshift_namespace: pod, container
+    # and image names are the workload owner's to choose.
+    # - name: payments-audit
+    #   patternRegex: '^AUDIT'
+    #   matchRegex:
+    #     openshift_namespace: '^payments$'
+    pipeThruputExempt: []
+    pipeEventCount:
+      disabled: true
+      labels: []
+      fields: []
+      maxSeries: 0
   
     outputs:
       splunk:
         default:
           url: ""
           urls: []
-          urlSelection: random-with-round-robin
+          urlSelection: random
           token: ""
           insecure: false
           minTLSVersion: ""
@@ -176,27 +176,31 @@ collectord:
           ackEnabled: false
           ackTimeout: 3m
           timeout: 30s
+          idleConnTimeout: 5m
           dedicatedClientPerIndex: true
           incorrectIndexBehavior: RedirectToDefault
           compressionLevel: default
           threads: 2
           threadsAlgorithm: weighted
+          maxConnsPerHost:
           excludeFields: []
+          duplicateFieldsWithUnderscore: false
           requireExplicitIndex: false
+          defaultMetricsIndex: ""
           maximumMessageLength: ""
           includeEventID: false
           queueSize: 1024
           timestampPrecision:
   
-    # Input configurations
     inputs:
-      # Collectord internal metrics
       collectordMetrics:
         disabled: false
         type: "openshift_prometheus"
         interval: 1m
         output: ""
         index: ""
+        metricsIndex: ""
+        metricsOutput: ""
         whitelist:
         - "^file_input_open$"
         - "^file_input_read_bytes$"
@@ -211,18 +215,18 @@ collectord:
         - "^splunk_post_retries_required_sum.*$"
         blacklist: []
     
-      # Prometheus auto-discovery
       prometheusAuto:
         disabled: false
         type: "openshift_prometheus"
         index: ""
+        metricsIndex: ""
+        metricsOutput: ""
         interval: 60s
         includeHelp: true
         timeout: 30s
         output: ""
         authorization: []
     
-      # System stats
       systemStats:
         disabled:
           host: false
@@ -236,11 +240,16 @@ collectord:
         index:
           host: ""
           cgroup: ""
+        metricsIndex:
+          host: ""
+          cgroup: ""
+        metricsOutput:
+          host: ""
+          cgroup: ""
         output:
           host: ""
           cgroup: ""
       
-      # Process stats
       procStats:
         disabled: false
         pathProc: /rootfs/proc
@@ -249,6 +258,8 @@ collectord:
         index:
           host: ""
           cgroup: ""
+        metricsIndex: ""
+        metricsOutput: ""
         includeSystemThreads: false
         output:
           host: ""
@@ -261,6 +272,12 @@ collectord:
         statsInterval: 30s
         type: "openshift_net_stats_v2"
         index:
+          host: ""
+          cgroup: ""
+        metricsIndex:
+          host: ""
+          cgroup: ""
+        metricsOutput:
           host: ""
           cgroup: ""
         output:
@@ -284,8 +301,15 @@ collectord:
       mountStats:
         disabled: false
         statsInterval: 30s
+        # root: the kubelet's filesystem; auto: every real filesystem of the node, filtered by
+        # include (filesystem type) and exclude (mount point) regular expressions.
+        mounts: root
+        include: ""
+        exclude: ""
         type: "openshift_mount_stats"
         index: ""
+        metricsIndex: ""
+        metricsOutput: ""
         output: ""
       
       diskStats:
@@ -293,6 +317,8 @@ collectord:
         statsInterval: 30s
         type: "openshift_disk_stats"
         index: ""
+        metricsIndex: ""
+        metricsOutput: ""
         output: ""
         
       containerLogs:
@@ -313,6 +339,14 @@ collectord:
         thruputPerSecond: ""
         tooOldEvents: ""
         tooNewEvents: ""
+        # Read rotated logs the kubelet compressed before Collectord got to them; false counts them lost.
+        readCompressed: true
+        compressedInflateBudget: 256MiB
+        # Repeat grouping, folding (lossy) and pattern reports: off unless true here or in a
+        # workload's logs-repeat/fold/patterns-enabled annotation.
+        repeatEnabled: false
+        foldEnabled: false
+        patternsEnabled: false
         
       applicationLogs:
         disabled: false
@@ -335,7 +369,11 @@ collectord:
         tooOldEvents: ""
         tooNewEvents: ""
         maxHoldAfterClose: 1800s
-      
+        repeatEnabled: false
+        foldEnabled: false
+        patternsEnabled: false
+
+      # Audit logs of the control plane, read on the control-plane nodes only.
       hostLogs:
         "audit-logs":
           disabled: false
@@ -349,13 +387,13 @@ collectord:
           verboseFields: false
           type: "openshift_host_logs"
           index: ""
+          samplingPercent: -1
+          samplingKey: ""
           extraction: '(?P<message>.*"stageTimestamp":"(?P<timestamp>[^"]+)".*)'
           extractionMessageField: 'message'
           timestampField: 'timestamp'
           timestampFormat: '2006-01-02T15:04:05.999999999Z07:00'
           timestampLocation: ""
-          samplingPercent: -1
-          samplingKey: ""
           output: ""
           thruputPerSecond: ""
           tooOldEvents: ""
@@ -363,12 +401,105 @@ collectord:
           eventPattern: ""
           blacklist: []
           whitelist: []
-      
+          thruputExempt: []
+          repeatEnabled: false
+          foldEnabled: false
+          patternsEnabled: false
+        "openshift-apiserver-audit-logs":
+          disabled: false
+          controlPlaneOnly: true
+          path: '/rootfs/var/log/openshift-apiserver/'
+          glob: 'audit*.log'
+          match: ""
+          recursive: false
+          pollingInterval: 250ms
+          walkingInterval: 5s
+          verboseFields: false
+          type: "openshift_host_logs"
+          index: ""
+          samplingPercent: -1
+          samplingKey: ""
+          extraction: '(?P<message>.*"stageTimestamp":"(?P<timestamp>[^"]+)".*)'
+          extractionMessageField: 'message'
+          timestampField: 'timestamp'
+          timestampFormat: '2006-01-02T15:04:05.999999999Z07:00'
+          timestampLocation: ""
+          output: ""
+          thruputPerSecond: ""
+          tooOldEvents: ""
+          tooNewEvents: ""
+          eventPattern: ""
+          blacklist: []
+          whitelist: []
+          thruputExempt: []
+          repeatEnabled: false
+          foldEnabled: false
+          patternsEnabled: false
+        "oauth-apiserver-audit-logs":
+          disabled: false
+          controlPlaneOnly: true
+          path: '/rootfs/var/log/oauth-apiserver/'
+          glob: 'audit*.log'
+          match: ""
+          recursive: false
+          pollingInterval: 250ms
+          walkingInterval: 5s
+          verboseFields: false
+          type: "openshift_host_logs"
+          index: ""
+          samplingPercent: -1
+          samplingKey: ""
+          extraction: '(?P<message>.*"stageTimestamp":"(?P<timestamp>[^"]+)".*)'
+          extractionMessageField: 'message'
+          timestampField: 'timestamp'
+          timestampFormat: '2006-01-02T15:04:05.999999999Z07:00'
+          timestampLocation: ""
+          output: ""
+          thruputPerSecond: ""
+          tooOldEvents: ""
+          tooNewEvents: ""
+          eventPattern: ""
+          blacklist: []
+          whitelist: []
+          thruputExempt: []
+          repeatEnabled: false
+          foldEnabled: false
+          patternsEnabled: false
+        "oauth-server-audit-logs":
+          disabled: false
+          controlPlaneOnly: true
+          path: '/rootfs/var/log/oauth-server/'
+          glob: 'audit*.log'
+          match: ""
+          recursive: false
+          pollingInterval: 250ms
+          walkingInterval: 5s
+          verboseFields: false
+          type: "openshift_host_logs"
+          index: ""
+          samplingPercent: -1
+          samplingKey: ""
+          extraction: '(?P<message>.*"stageTimestamp":"(?P<timestamp>[^"]+)".*)'
+          extractionMessageField: 'message'
+          timestampField: 'timestamp'
+          timestampFormat: '2006-01-02T15:04:05.999999999Z07:00'
+          timestampLocation: ""
+          output: ""
+          thruputPerSecond: ""
+          tooOldEvents: ""
+          tooNewEvents: ""
+          eventPattern: ""
+          blacklist: []
+          whitelist: []
+          thruputExempt: []
+          repeatEnabled: false
+          foldEnabled: false
+          patternsEnabled: false
+
       journald:
         disabled: false
         path:
           persistent: /rootfs/var/log/journal/
-          volatile: /rootfs/run/log/journal/
         pollingInterval: 250ms
         startFromRel: ""
         type: "openshift_host_logs"
@@ -384,12 +515,32 @@ collectord:
         blacklist:
           - '^I\d+.*$'
         whitelist: []
+        thruputExempt: []
         spawnExternalProcess: false
+        repeatEnabled: false
+        foldEnabled: false
+        patternsEnabled: false
         
+      # Scripts run on every node, their output sent as events: each entry is an
+      # [input.script::<name>] stanza (quote arg.<n> and env.<n>). root: /rootfs runs it with the
+      # node's shell and tools. A script runs only when root owns it and every directory above it,
+      # writable by no one else.
+      scripts: {}
+        # uptime:
+        #   command: /opt/scripts/uptime.sh
+        #   "arg.1": "--pretty"
+        #   "env.1": "TZ=UTC"
+        #   root: /rootfs
+        #   user: nobody
+        #   interval: 5m
+        #   timeout: 60s
+        #   format: event
+        #   type: openshift_uptime
+
       diagnostics:
         # Collectord can report if node reboot is required (uncomment to use it)
         node-reboot-required:
-          path: /rootfs/var/run/reboot-required*
+          path: /rootfs/run/reboot-required*
           interval: "1h"
         # See https://www.kernel.org/doc/Documentation/admin-guide/hw-vuln/index.rst
         # And https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-devices-system-cpu
@@ -398,26 +549,22 @@ collectord:
           interval: 1h
           
       prometheus:
-        # Each entry below renders a [input.prometheus::<name>] stanza in
-        # 002-daemonset.conf (controlPlaneOnly: false) or 003-daemonset-master.conf
-        # (controlPlaneOnly: true).
+        # Each entry is an [input.prometheus::<name>] stanza, scraped by the DaemonSet on every node.
         #
-        # The "WHERE" of the scrape is controlled by exactly one of three keys
-        # (since 26.04.2 - legacy endpoint-http://<svc>:<port>/path syntax was
-        # removed and now fails fast at config load):
+        # The "WHERE" of the scrape is controlled by one of four keys:
+        #   podSelector:   the pods on this node a label selector matches, in podNamespace,
+        #                  at portName or port (podSelectors adds alternatives)
         #   endpointSlice: <svc>.<ns>  - per-pod fan-out via discovery.k8s.io/v1.EndpointSlice
         #   service:       <svc>.<ns>  - hit the ClusterIP, kube-proxy load-balances
-        #   endpoint(s):   literal URL(s) - no Kubernetes discovery; the existing
-        #                                   localhost-then-proxy fallback idiom.
+        #   endpoint(s):   literal URL(s) - no Kubernetes discovery; the first that answers
         # When endpointSlice or service is used, set port (number) or portName
         # (matches EndpointSlice port name), plus scheme (http/https) and path.
+        # Beside a podSelector, endpoint(s) are the fallback on a node without a matching pod,
+        # limited to the nodes nodeSelector matches.
         #
-        # OpenShift's standard layout fronts the controller-manager with
-        # kube-controller-manager.openshift-kube-controller-manager on port 10257,
-        # and the scheduler with scheduler.openshift-kube-scheduler on port 10259.
         # Example - controller-manager reached through its Service:
         # "controller-via-discovery":
-        #   controlPlaneOnly: true
+        #   nodeSelector: node-role.kubernetes.io/master
         #   disabled: false
         #   type: "openshift_prometheus"
         #   source: "controller"
@@ -434,16 +581,20 @@ collectord:
         #   insecure: true
         #   includeHelp: false
         "kubelet":
-          controlPlaneOnly: false
           disabled: false
           type: "openshift_prometheus"
           index: ""
+          metricsIndex: ""
+          metricsOutput: ""
           host: '${KUBERNETES_NODENAME}'
           source: "kubelet"
           interval: "60s"
           timeout: "60s"
-          endpoint: "https://127.0.0.1:10250/metrics"
-          endpoints: []
+          # The node IP, not loopback, which a host-network pod could bind to take the token.
+          # To verify, point certPath at OpenShift's kubelet-serving CA and set insecure: false.
+          endpoint: ""
+          endpoints:
+            - 'https://${KUBERNETES_NODEIP}:10250/metrics'
           tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"
           certPath: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
           clientCertPath: ""
@@ -454,115 +605,177 @@ collectord:
           whitelist:
             - '^(kubernetes|openshift)_build_info$'
             - '^kubelet_runtime_operations_duration_seconds_sum$'
-            - '^kubelet_docker_operations_duration_seconds_sum$'
-            - '^kubelet_network_plugin_operations_duration_seconds_sum$'
+            - '^kubelet_runtime_operations_errors_total$'
             - '^kubelet_cgroup_manager_duration_seconds_sum$'
             - '^storage_operation_duration_seconds_sum$'
-            - '^kubelet_docker_operations_errors_total$'
-            - '^kubelet_runtime_operations_errors_total$'
+            - '^kubelet_volume_stats_.+$'
+            - '^kubelet_running_pods$'
+            - '^kubelet_running_containers$'
+            - '^kubelet_desired_pods$'
+            - '^kubelet_pleg_relist_duration_seconds_sum$'
+            - '^kubelet_pod_start_duration_seconds_sum$'
+            - '^kubelet_pod_worker_duration_seconds_sum$'
+            - '^kubelet_started_pods_errors_total$'
+            - '^kubelet_certificate_manager_client_ttl_seconds$'
             - '^rest_client_requests_total$'
+            - '^rest_client_request_duration_seconds_sum$'
             - '^process_cpu_seconds_total$'
             - '^process_resident_memory_bytes$'
             - '^process_virtual_memory_bytes$'
-            - '^rest_client_request_duration_seconds_sum$'
-            - '^kubelet_volume_stats_.+$'
-            - '^rest_client_requests_total$'
-          backlist: []
+            - '^process_open_fds$'
+            - '^process_max_fds$'
+            - '^go_goroutines$'
+            - '^process_start_time_seconds$'
+          blacklist: []
         "kubernetes-api":
-          controlPlaneOnly: true
           disabled: false
           type: "openshift_prometheus"
           index: ""
+          metricsIndex: ""
+          metricsOutput: ""
           host: '${KUBERNETES_NODENAME}'
           source: "kubernetes-api"
           interval: "60s"
           timeout: "60s"
+          podNamespace: openshift-kube-apiserver
+          podSelector: app=openshift-kube-apiserver
+          port: 6443
+          scheme: https
+          path: /metrics
+          nodeSelector: node-role.kubernetes.io/master
           endpoint: ""
           endpoints:
-            - "https://127.0.0.1:8443/metrics"
             - "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}/metrics"
           tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"
           certPath: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          caName: kubernetes
           clientCertPath: ""
           clientKeyPath: ""
-          insecure: true
+          insecure: false
           includeHelp: false
           output: ""
           whitelist:
             - '^(kubernetes|openshift)_build_info$'
             - '^authenticated_user_requests$'
             - '^apiserver_request_total$'
+            - '^apiserver_current_inflight_requests$'
+            - '^apiserver_flowcontrol_current_inqueue_requests$'
+            - '^apiserver_request_terminations_total$'
+            - '^apiserver_client_certificate_expiration_seconds_bucket$'
+            - '^apiserver_audit_event_total$'
+            - '^apiserver_audit_error_total$'
+            - '^apiserver_resource_objects$'
+            - '^apiserver_storage_objects$'
             - '^process_cpu_seconds_total$'
             - '^process_resident_memory_bytes$'
             - '^process_virtual_memory_bytes$'
-            - '^rest_client_request_duration_seconds_sum$'
-            - '^rest_client_requests_total$'
-          backlist: []
+            - '^process_open_fds$'
+            - '^process_max_fds$'
+            - '^go_goroutines$'
+            - '^process_start_time_seconds$'
+            - '^apiserver_request_duration_seconds_sum$'
+          blacklist: []
         "scheduler":
-          controlPlaneOnly: true
           disabled: false
           type: "openshift_prometheus"
           index: ""
+          metricsIndex: ""
+          metricsOutput: ""
           host: '${KUBERNETES_NODENAME}'
           source: "scheduler"
           interval: "60s"
           timeout: "60s"
+          podNamespace: openshift-kube-scheduler
+          podSelector: app=openshift-kube-scheduler
+          port: 10259
+          scheme: https
+          path: /metrics
+          nodeSelector: node-role.kubernetes.io/master
           endpoint: ""
           endpoints:
-            - "https://:10259/metrics"
-            - "https://:8444/metrics"
+            - "https://127.0.0.1:10259/metrics"
           tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"
-          certPath: ""
+          certPath: "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+          caName: scheduler.openshift-kube-scheduler.svc
           clientCertPath: ""
           clientKeyPath: ""
-          insecure: true
+          insecure: false
           includeHelp: false
           output: ""
           whitelist:
             - '^(kubernetes|openshift)_build_info$'
-            - '^scheduler_e2e_scheduling_duration_seconds_sum$'
-            - '^scheduler_binding_duration_seconds_sum$'
+            - '^scheduler_scheduling_attempt_duration_seconds_sum$'
             - '^scheduler_scheduling_algorithm_duration_seconds_sum$'
+            - '^scheduler_pending_pods$'
+            - '^scheduler_schedule_attempts_total$'
+            - '^scheduler_queue_incoming_pods_total$'
+            - '^scheduler_preemption_attempts_total$'
+            - '^leader_election_master_status$'
+            - '^rest_client_requests_total$'
+            - '^rest_client_request_duration_seconds_sum$'
             - '^process_cpu_seconds_total$'
             - '^process_resident_memory_bytes$'
             - '^process_virtual_memory_bytes$'
-            - '^process_resident_memory_bytes$'
-            - '^process_virtual_memory_bytes$'
-          backlist: []
+            - '^process_open_fds$'
+            - '^process_max_fds$'
+            - '^go_goroutines$'
+            - '^process_start_time_seconds$'
+          blacklist: []
         "controller":
-          controlPlaneOnly: true
           disabled: false
           type: "openshift_prometheus"
           index: ""
+          metricsIndex: ""
+          metricsOutput: ""
           host: '${KUBERNETES_NODENAME}'
           source: "controller"
           interval: "60s"
           timeout: "60s"
+          podNamespace: openshift-kube-controller-manager
+          podSelector: app=kube-controller-manager
+          port: 10257
+          scheme: https
+          path: /metrics
+          nodeSelector: node-role.kubernetes.io/master
           endpoint: ""
           endpoints:
-            - "https://:10257/metrics"
-            - "https://:8444/metrics"
+            - "https://127.0.0.1:10257/metrics"
           tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"
-          certPath: ""
+          certPath: "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+          caName: kube-controller-manager.openshift-kube-controller-manager.svc
           clientCertPath: ""
           clientKeyPath: ""
-          insecure: true
+          insecure: false
           includeHelp: false
           output: ""
           whitelist:
             - '^(kubernetes|openshift)_build_info$'
-            - '^process_cpu_seconds_total$'
-            - '^process_resident_memory_bytes$'
-            - '^process_virtual_memory_bytes$'
             - '^node_collector_zone_size$'
             - '^node_collector_zone_health$'
             - '^node_collector_unhealthy_nodes_in_zone$'
-          backlist: []
+            - '^node_collector_evictions_total$'
+            - '^workqueue_depth$'
+            - '^workqueue_retries_total$'
+            - '^workqueue_longest_running_processor_seconds$'
+            - '^leader_election_master_status$'
+            - '^rest_client_requests_total$'
+            - '^rest_client_request_duration_seconds_sum$'
+            - '^process_cpu_seconds_total$'
+            - '^process_resident_memory_bytes$'
+            - '^process_virtual_memory_bytes$'
+            - '^process_open_fds$'
+            - '^process_max_fds$'
+            - '^go_goroutines$'
+            - '^process_start_time_seconds$'
+          blacklist: []
         "etcd":
-          controlPlaneOnly: true
+          # etcd's metrics need a client certificate, read from the master's static-pod resources.
+          nodeSelector: node-role.kubernetes.io/master
           disabled: false
           type: "openshift_prometheus"
           index: ""
+          metricsIndex: ""
+          metricsOutput: ""
           host: '${KUBERNETES_NODENAME}'
           source: "etcd"
           interval: "60s"
@@ -581,26 +794,83 @@ collectord:
           whitelist:
             - '^etcd_server_leader_changes_seen_total$'
             - '^etcd_server_has_leader$'
+            - '^etcd_server_is_leader$'
             - '^etcd_server_proposals_committed_total$'
             - '^etcd_server_proposals_applied_total$'
-            - '^etcd_server_proposals_committed_total$'
             - '^etcd_server_proposals_pending$'
             - '^etcd_server_proposals_failed_total$'
             - '^etcd_disk_wal_fsync_duration_seconds_sum$'
-            - '^etcd_disk_wal_fsync_duration_seconds_count$'
+            - '^etcd_disk_wal_fsync_duration_seconds_bucket$'
             - '^etcd_disk_backend_commit_duration_seconds_sum$'
-            - '^etcd_disk_backend_commit_duration_seconds_count$'
+            - '^etcd_disk_backend_commit_duration_seconds_bucket$'
             - '^etcd_network_client_grpc_.*$'
             - '^grpc_server_handled_total$'
             - '^etcd_network_peer_round_trip_time_seconds_bucket$'
+            - '^etcd_network_peer_sent_failures_total$'
+            - '^etcd_mvcc_db_total_size_in_bytes$'
+            - '^etcd_mvcc_db_total_size_in_use_in_bytes$'
+            - '^etcd_server_quota_backend_bytes$'
+            - '^etcd_debugging_mvcc_keys_total$'
+            - '^etcd_server_slow_apply_total$'
+            - '^etcd_server_slow_read_indexes_total$'
+            - '^etcd_server_read_indexes_failed_total$'
+            - '^etcd_server_health_failures$'
             - '^process_cpu_seconds_total$'
             - '^process_resident_memory_bytes$'
             - '^process_virtual_memory_bytes$'
             - '^process_open_fds$'
             - '^process_max_fds$'
-            - '^etcd_disk_backend_commit_duration_seconds_bucket$'
-            - '^etcd_disk_wal_fsync_duration_seconds_bucket$'
-          backlist: []
+            - '^go_goroutines$'
+            - '^process_start_time_seconds$'
+            - '^etcd_server_version$'
+            - '^etcd_cluster_version$'
+            - '^etcd_server_go_version$'
+            - '^etcd_server_id$'
+            - '^etcd_network_peer_round_trip_time_seconds_sum$'
+          blacklist: []
+          # Most gRPC method and code series stay 0: send each once it first rises.
+          skipZeroCounters:
+            - '^grpc_server_handled_total$'
+        "coredns":
+          disabled: false
+          type: "openshift_prometheus"
+          index: ""
+          metricsIndex: ""
+          metricsOutput: ""
+          host: '${KUBERNETES_NODENAME}'
+          source: "coredns"
+          interval: "60s"
+          timeout: "60s"
+          # dns-default through its kube-rbac-proxy, from each pod's own node: from 4.22 a
+          # NetworkPolicy admits only openshift-monitoring and that node.
+          podNamespace: openshift-dns
+          podSelector: dns.operator.openshift.io/daemonset-dns=default
+          port: 9154
+          scheme: https
+          path: /metrics
+          endpoint: ""
+          endpoints: []
+          tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          certPath: "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+          caName: dns-default.openshift-dns.svc
+          clientCertPath: ""
+          clientKeyPath: ""
+          insecure: false
+          includeHelp: false
+          output: ""
+          whitelist:
+            - '^coredns_.+$'
+            - '^go_gc_duration_seconds$'
+            - '^go_goroutines$'
+            - '^go_memstats_heap_inuse_bytes$'
+            - '^process_cpu_seconds_total$'
+            - '^process_network_receive_bytes_total$'
+            - '^process_network_transmit_bytes_total$'
+            - '^process_open_fds$'
+            - '^process_resident_memory_bytes$'
+            - '^process_start_time_seconds$'
+            - '^process_virtual_memory_bytes$'
+          blacklist: []
       kubernetesEvents:
         disabled: false
         type: "openshift_events"
@@ -610,7 +880,7 @@ collectord:
       kubernetesWatch:
         "pods":
           disabled: false
-          refresh: 10m
+          refresh: 45m
           apiVersion: v1
           kind: Pod
           namespace: ""
@@ -621,7 +891,7 @@ collectord:
           excludeManagedFields: true
         "resourcequota":
           disabled: false
-          refresh: 10m
+          refresh: 45m
           apiVersion: v1
           kind: ResourceQuota
           namespace: ""
@@ -632,7 +902,7 @@ collectord:
           excludeManagedFields: true
         "nodes":
           disabled: false
-          refresh: 10m
+          refresh: 45m
           apiVersion: v1
           kind: Node
           namespace: ""
@@ -643,7 +913,7 @@ collectord:
           excludeManagedFields: true
         "clusterresourcequota":
           disabled: false
-          refresh: 10m
+          refresh: 45m
           apiVersion: quota.openshift.io/v1
           kind: ClusterResourceQuota
           namespace: ""

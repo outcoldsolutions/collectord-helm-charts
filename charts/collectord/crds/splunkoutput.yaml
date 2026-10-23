@@ -31,6 +31,16 @@ spec:
                       type: string
                     key:
                       type: string
+                defaultMetricsIndex:
+                  type: string
+                  description: "Index of the metrics-index records sent through this output; empty for the token's default"
+                incorrectIndexBehavior:
+                  type: string
+                  description: "What happens to a record the token refuses"
+                  enum: ["RedirectToDefault", "Drop", "Retry"]
+                requireExplicitIndex:
+                  type: boolean
+                  description: "Drop a record that carries no index instead of sending it to the token's default"
               oneOf:
                 - required: ["token"]
                 - required: ["tokenFromSecret"]

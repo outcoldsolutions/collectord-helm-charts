@@ -1,9 +1,12 @@
-{{- if .Values.priorityClass.create -}}
+{{- /* The class both workloads run under instead of the built-in ones
+(collectord.priorityClassOwn), when the chart is to create it. */ -}}
+{{- $own := include "collectord.priorityClassOwn" . -}}
+{{- if and $own .Values.priorityClass.create -}}
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
-  name: {{ .Values.priorityClass.name | default (printf "%s-critical" .Release.Name) }}
+  name: {{ $own | quote }}
   labels:
     {{- include "collectord.labels" . | nindent 4 }}
-value: {{ .Values.priorityClass.value }}
+value: {{ .Values.priorityClass.value | int }}
 {{- end }}

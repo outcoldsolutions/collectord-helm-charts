@@ -12,4 +12,4 @@ This repository contains [Helm](https://helm.sh/) charts for Collectord (by [Out
 
 ## License
 
-[OUTCOLD SOLUTIONS SOFTWARE LICENSE AGREEMENT](https://www.outcoldsolutions.com/docs/license-agreement/)
+[OUTCOLD SOLUTIONS SOFTWARE LICENSE AGREEMENT](https://www.outcoldsolutions.com/legal/license-agreement/)

@@ -2,14 +2,14 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-addon
+  name: {{ include "collectord.workloadName" . }}-addon
   namespace: {{ .Release.Namespace }}
   {{- with .Values.deployment.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   labels:
-    {{- include "collectord.labels" . | nindent 4 }}
+    {{- include "collectord.workloadLabels" . | nindent 4 }}
     {{- with .Values.deployment.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -20,26 +20,39 @@ spec:
       {{- include "collectord.deployment.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      name: {{ .Release.Name }}-addon
-      {{- with .Values.deployment.podAnnotations }}
+      name: {{ include "collectord.workloadName" . }}-addon
       annotations:
+        # A change to the configuration files these pods mount rolls them:
+        # Collectord reads its inputs' configuration at startup. A ConfigMap managed
+        # outside the chart (configMap.create: false) gets no checksum: roll the pods
+        # with an annotation of your own under podAnnotations.
+        {{- $checksum := include "collectord.configChecksum" (dict "root" $ "keys" (list "001-general.conf" "004-addon.conf") "extra" (list .Values.configMap.allAdditionalFiles .Values.configMap.deploymentAdditionalFiles)) }}
+        {{- $podAnnotations := default (dict) .Values.deployment.podAnnotations }}
+        {{- if $checksum }}
+        checksum/config: {{ $checksum }}
+        {{- $podAnnotations = omit $podAnnotations "checksum/config" }}
+        {{- end }}
+        {{- with $podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "collectord.deployment.selectorLabels" . | nindent 8 }}
         {{- with .Values.deployment.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      priorityClassName: {{ .Values.priorityClass.name | default (printf "%s-critical" .Release.Name) }}
+      priorityClassName: {{ include "collectord.priorityClassName" (dict "root" $ "workload" "deployment") | quote }}
+      {{- /* a presence test, not `with`: 0 is a valid grace period and `with` would drop it */}}
+      {{- if not (kindIs "invalid" .Values.deployment.terminationGracePeriodSeconds) }}
+      terminationGracePeriodSeconds: {{ .Values.deployment.terminationGracePeriodSeconds }}
+      {{- end }}
       serviceAccountName: {{ .Values.serviceAccount.name | default .Release.Name }}
       {{- with .Values.deployment.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.deployment.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
+      {{- with include "collectord.affinity" (dict "affinity" .Values.deployment.affinity "exclude" .Values.excludeNodes) }}
+      {{- . | nindent 6 }}
       {{- end }}
       {{- with .Values.deployment.tolerations }}
       tolerations:
@@ -47,7 +60,7 @@ spec:
       {{- end }}
       containers:
       - name: {{ .Release.Name }}
-        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        image: {{ include "collectord.image" . }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         {{- with .Values.deployment.ports }}
         ports:
@@ -55,15 +68,14 @@ spec:
         {{- end }}
         {{- with .Values.deployment.livenessProbe }}
         livenessProbe:
-          {{- toYaml . | nindent 10 }}
+          {{- include "collectord.probe" (dict "probe" . "binding" $.Values.configuration.general.httpServerBinding) | nindent 10 }}
         {{- end }}
         {{- with .Values.deployment.readinessProbe }}
         readinessProbe:
-          {{- toYaml . | nindent 10 }}
+          {{- include "collectord.probe" (dict "probe" . "binding" $.Values.configuration.general.httpServerBinding) | nindent 10 }}
         {{- end }}
         securityContext:
-          runAsUser: 0
-          privileged: true
+          {{- toYaml .Values.deployment.securityContext | nindent 10 }}
         resources:
           {{- toYaml .Values.deployment.resources | nindent 10 }}
         env:
@@ -75,6 +87,9 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
+        {{- with .Values.deployment.env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         volumeMounts:
         - name: {{ .Release.Name }}-state
           mountPath: /data
@@ -93,10 +108,13 @@ spec:
         {{- end }}
         {{- include "collectord.volumeMounts" (dict "workloadType" "deployment" "values" .Values) | nindent 8 }}
       volumes:
+      # The DaemonSet pod on this node owns the directory and the database the
+      # addon opens read-only. DirectoryOrCreate, so an addon scheduled first
+      # mounts it too; Collectord waits for the DaemonSet to create the database.
       - name: {{ .Release.Name }}-state
         hostPath:
-          path: /var/lib/{{ .Release.Name }}/data/
-          type: Directory
+          path: /var/lib/{{ include "collectord.workloadName" . }}/data/
+          type: DirectoryOrCreate
       {{- if .Values.mountLocalTime }}
       - name: localtime
         hostPath:
@@ -104,7 +122,7 @@ spec:
       {{- end }}
       - name: {{ .Release.Name }}-config
         configMap:
-          name: {{ .Release.Name }}
+          name: {{ include "collectord.workloadName" . }}
           items:
           - key: 001-general.conf
             path: 001-general.conf

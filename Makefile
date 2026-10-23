@@ -1,10 +1,24 @@
+# Publishing by hand, for a chart-only release: a Collectord release publishes its charts itself.
 OCI_REGISTRY=registry-1.docker.io/outcoldsolutions
+# ghcr.io keeps the charts under charts/: its top-level names are the images'.
+GHCR_OCI_REGISTRY=ghcr.io/outcoldsolutions/charts
+
+chart_version = $(shell grep version charts/$(1)/Chart.yaml | head -n 1 | grep -Eo "[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+")
+
+# Push to Docker Hub, then copy that manifest to ghcr.io byte for byte: a second
+# helm push would stamp its own created annotation, so the digests would differ.
+# Needs a ghcr.io login with write:packages (gh auth token | oras login ghcr.io
+# --username <user> --password-stdin).
+define chart_publish
+	@helm push dist/$(1)-$(call chart_version,$(1)).tgz oci://${OCI_REGISTRY}
+	@oras cp ${OCI_REGISTRY}/$(1):$(call chart_version,$(1)) ${GHCR_OCI_REGISTRY}/$(1):$(call chart_version,$(1))
+endef
 
 collectord:
 	@helm lint charts/collectord
 	@helm package charts/collectord -d dist/
 collectord-publish: collectord
-	@helm push dist/collectord-$(shell cat charts/collectord/Chart.yaml | grep version | head -n 1 | grep -Eo "[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+").tgz  oci://${OCI_REGISTRY}
+	$(call chart_publish,collectord)
 collectord-artifacthub-repo.yml:
 	oras push \
         ${OCI_REGISTRY}/collectord:artifacthub.io \
@@ -16,7 +30,7 @@ collectord-elasticsearch:
 	@helm lint charts/collectord-elasticsearch
 	@helm package charts/collectord-elasticsearch -d dist/
 collectord-elasticsearch-publish: collectord-elasticsearch
-	@helm push dist/collectord-elasticsearch-$(shell cat charts/collectord-elasticsearch/Chart.yaml | grep version | head -n 1 | grep -Eo "[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+").tgz  oci://${OCI_REGISTRY}
+	$(call chart_publish,collectord-elasticsearch)
 collectord-elasticsearch-artifacthub-repo.yml:
 	oras push \
         ${OCI_REGISTRY}/collectord-elasticsearch:artifacthub.io \
@@ -28,7 +42,7 @@ collectord-opensearch:
 	@helm lint charts/collectord-opensearch
 	@helm package charts/collectord-opensearch -d dist/
 collectord-opensearch-publish: collectord-opensearch
-	helm push dist/collectord-opensearch-$(shell cat charts/collectord-opensearch/Chart.yaml | grep version | head -n 1 | grep -Eo "[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+").tgz  oci://${OCI_REGISTRY}
+	$(call chart_publish,collectord-opensearch)
 collectord-opensearch-artifacthub-repo.yml:
 	oras push \
         ${OCI_REGISTRY}/collectord-opensearch:artifacthub.io \
@@ -40,7 +54,7 @@ collectord-splunk-kubernetes:
 	@helm lint charts/collectord-splunk-kubernetes
 	@helm package charts/collectord-splunk-kubernetes -d dist/
 collectord-splunk-kubernetes-publish: collectord-splunk-kubernetes
-	@helm push dist/collectord-splunk-kubernetes-$(shell cat charts/collectord-splunk-kubernetes/Chart.yaml | grep version | head -n 1 | grep -Eo "[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+").tgz  oci://${OCI_REGISTRY}
+	$(call chart_publish,collectord-splunk-kubernetes)
 collectord-splunk-kubernetes-artifacthub-repo.yml:
 	oras push \
         ${OCI_REGISTRY}/collectord-splunk-kubernetes:artifacthub.io \
@@ -52,7 +66,7 @@ collectord-splunk-openshift:
 	@helm lint charts/collectord-splunk-openshift
 	@helm package charts/collectord-splunk-openshift -d dist/
 collectord-splunk-openshift-publish: collectord-splunk-openshift
-	@helm push dist/collectord-splunk-openshift-$(shell cat charts/collectord-splunk-openshift/Chart.yaml | grep version | head -n 1 | grep -Eo "[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+").tgz  oci://${OCI_REGISTRY}
+	$(call chart_publish,collectord-splunk-openshift)
 collectord-splunk-openshift-artifacthub-repo.yml:
 	oras push \
         ${OCI_REGISTRY}/collectord-splunk-openshift:artifacthub.io \
@@ -64,7 +78,7 @@ collectord-syslog:
 	@helm lint charts/collectord-syslog
 	@helm package charts/collectord-syslog -d dist/
 collectord-syslog-publish: collectord-syslog
-	@helm push dist/collectord-syslog-$(shell cat charts/collectord-syslog/Chart.yaml | grep version | head -n 1 | grep -Eo "[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+").tgz  oci://${OCI_REGISTRY}
+	$(call chart_publish,collectord-syslog)
 collectord-syslog-artifacthub-repo.yml:
 	oras push \
         ${OCI_REGISTRY}/collectord-syslog:artifacthub.io \

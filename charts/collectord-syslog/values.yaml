@@ -5,17 +5,13 @@ scc:
 
 collectord:
   image:
-    repository: docker.io/outcoldsolutions/collectorforkubernetes
-  
+    repository: registry.outcold.solutions/outcoldsolutions/collectorforkubernetes
+
   clusterRole:
     name: ""
     create: true
-    rules:
-    - apiGroups:     ['extensions']
-      resources:     ['podsecuritypolicies']
-      verbs:         ['use']
-      resourceNames: ['privileged']
-  
+    userOutputSecrets: false
+
   configuration:
     general:
       # IMPORTANT: Please review license https://www.outcoldsolutions.com/legal/license-agreement/
@@ -41,6 +37,7 @@ collectord:
       thruputPerSecond: ""
       tooOldEvents: ""
       tooNewEvents: ""
+      fieldsSeparator: ""
       autoSkipGzipFiles: true
       "multioutput.async": true
       "multioutput.asyncBufferSize": 100
@@ -58,7 +55,6 @@ collectord:
           - 'v1/namespace'
           - 'apps/v1/deployment'
           - 'collectord.io/v1/configuration'
-        watchImplementation: 2
       crio:
         url: unix:///rootfs/var/run/crio/crio.sock
         timeout: 1m
@@ -81,6 +77,19 @@ collectord:
       patternRegex: '^[^\s]'
     pipeReplace: []
     pipeHash: []
+    # Log lines no thruput cap holds back and no sampling drops, per workload; over a spent cap
+    # a selected workload drops its other lines. Select by kubernetes_namespace: pod, container
+    # and image names are the workload owner's to choose.
+    # - name: payments-audit
+    #   patternRegex: '^AUDIT'
+    #   matchRegex:
+    #     kubernetes_namespace: '^payments$'
+    pipeThruputExempt: []
+    pipeEventCount:
+      disabled: true
+      labels: []
+      fields: []
+      maxSeries: 0
     
     outputs:
       syslog:
@@ -88,12 +97,11 @@ collectord:
           network: "tcp"
           address: ""
 
-    # Input configurations
     inputs:
       containerLogs:
         disabled: false
         type: "k8s_logs"
-        "syslog.format": '{type}|{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}|{cluster}|{host}|{namespace}|{pod_id}|{pod_name}|{container_name}|{stream}|{message}'
+        "syslog.format": '{{type}}|{{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}}|{{cluster}}|{{host}}|{{namespace}}|{{pod_id}}|{{pod_name}}|{{container_name}}|{{stream}}|{{message}}'
         path: "/rootfs/var/lib/docker/containers/"
         crioPath: "/rootfs/var/log/pods/"
         pollingInterval: 250ms
@@ -108,6 +116,14 @@ collectord:
         thruputPerSecond: ""
         tooOldEvents: ""
         tooNewEvents: ""
+        # Read rotated logs the kubelet compressed before Collectord got to them; false counts them lost.
+        readCompressed: true
+        compressedInflateBudget: 256MiB
+        # Repeat grouping, folding (lossy) and pattern reports: off unless true here or in a
+        # workload's logs-repeat/fold/patterns-enabled annotation.
+        repeatEnabled: false
+        foldEnabled: false
+        patternsEnabled: false
         
       applicationLogs:
         disabled: false
@@ -118,7 +134,7 @@ collectord:
         walkingInterval: 5s
         verboseFields: false
         type: "k8s_logs"
-        "syslog.format": '{type}|{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}|{cluster}|{host}|{namespace}|{pod_id}|{pod_name}|{container_name}|{file_name}|{message}'
+        "syslog.format": '{{type}}|{{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}}|{{cluster}}|{{host}}|{{namespace}}|{{pod_id}}|{{pod_name}}|{{container_name}}|{{file_name}}|{{message}}'
         eventPatternRegex: '^[^\s]'
         eventPatternMaxInterval: 100ms
         eventPatternMaxWait: 1s
@@ -130,6 +146,9 @@ collectord:
         tooOldEvents: ""
         tooNewEvents: ""
         maxHoldAfterClose: 1800s
+        repeatEnabled: false
+        foldEnabled: false
+        patternsEnabled: false
       
       hostLogs:
         "audit-logs":
@@ -143,8 +162,7 @@ collectord:
           walkingInterval: 5s
           verboseFields: false
           type: "k8s_audit_logs"
-          "syslog.format": '{type}|{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}|{cluster}|{message}'
-          dataStream: ""
+          "syslog.format": '{{type}}|{{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}}|{{cluster}}|{{message}}'
           extraction: '(?P<message>.*"stageTimestamp":"(?P<timestamp>[^"]+)".*)'
           extractionMessageField: 'message'
           timestampField: 'timestamp'
@@ -159,6 +177,76 @@ collectord:
           eventPattern: ""
           blacklist: []
           whitelist: []
+          thruputExempt: []
+          repeatEnabled: false
+          foldEnabled: false
+          patternsEnabled: false
+        # Off: rsyslog writes these files from the journal journald reads, so lines would arrive
+        # twice. On nodes without journald, turn this on and journald off.
+        "syslog":
+          disabled: true
+          path: '/rootfs/var/log/'
+          glob: ""
+          match: '^(syslog|messages|auth\.log)(.[\d\-]+)?$'
+          recursive: false
+          pollingInterval: 250ms
+          walkingInterval: 5s
+          verboseFields: false
+          type: "k8s_host_logs"
+          "syslog.format": '{{type}}|{{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}}|{{cluster}}|{{host}}|{{file_name}}|{{message}}'
+          extraction: '^(?P<timestamp>[A-Za-z]+\s+\d+\s\d+:\d+:\d+|\d{4}-\d{2}-\d{2}T\S+)\s(?P<syslog_hostname>[^\s]+)\s(?P<syslog_component>[^:\[]+)(\[(?P<syslog_pid>\d+)\])?: (.+)$'
+          extractionMessageField: ""
+          # the fields naming the process that wrote a line, which groups its lines apart
+          extractionWriterFields: "syslog_hostname, syslog_component, syslog_pid"
+          timestampField: "timestamp"
+          # RFC 3339 or the traditional `Jan 2 15:04:05`
+          timestampFormat: "@syslog"
+          timestampSetMonth: false
+          timestampSetDay: false
+          timestampLocation: "Local"
+          samplingPercent: -1
+          samplingKey: ""
+          output: ""
+          thruputPerSecond: ""
+          tooOldEvents: ""
+          tooNewEvents: ""
+          eventPattern: ""
+          blacklist: []
+          whitelist: []
+          thruputExempt: []
+          repeatEnabled: false
+          foldEnabled: false
+          patternsEnabled: false
+        "logs":
+          disabled: false
+          path: '/rootfs/var/log/'
+          glob: ""
+          match: '^(([\w\-.]+\.log(.[\d\-]+)?)|(docker))$'
+          # the files rsyslog writes from the journal on Debian and Ubuntu, which journald reads
+          exclude: '^(auth|cron|daemon|kern|lpr|mail|user|ufw)\.log(.[\d\-]+)?$'
+          pollingInterval: 250ms
+          walkingInterval: 5s
+          verboseFields: false
+          type: "k8s_host_logs"
+          "syslog.format": '{{type}}|{{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}}|{{cluster}}|{{host}}|{{file_name}}|{{message}}'
+          extraction: ''
+          extractionMessageField: ""
+          timestampField: ""
+          timestampFormat: ""
+          timestampLocation: ""
+          samplingPercent: -1
+          samplingKey: ""
+          output: ""
+          thruputPerSecond: ""
+          tooOldEvents: ""
+          tooNewEvents: ""
+          eventPattern: ""
+          blacklist: []
+          whitelist: []
+          thruputExempt: []
+          repeatEnabled: false
+          foldEnabled: false
+          patternsEnabled: false
       
       journald:
         disabled: false
@@ -168,7 +256,7 @@ collectord:
         pollingInterval: 250ms
         startFromRel: ""
         type: "k8s_host_logs"
-        "syslog.format": "{type}|{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}|{cluster}|{host}|journald|{message}"
+        "syslog.format": '{{type}}|{{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}}|{{cluster}}|{{host}}|journald|{{message}}'
         samplingPercent: -1
         samplingKey: ""
         reopenInterval: 1h
@@ -179,12 +267,32 @@ collectord:
         eventPattern: '^[^\s]'
         blacklist: []
         whitelist: []
+        thruputExempt: []
         spawnExternalProcess: false
+        repeatEnabled: false
+        foldEnabled: false
+        patternsEnabled: false
         
+      # Scripts run on every node, their output sent as events: each entry is an
+      # [input.script::<name>] stanza (quote arg.<n> and env.<n>). root: /rootfs runs it with the
+      # node's shell and tools. A script runs only when root owns it and every directory above it,
+      # writable by no one else.
+      scripts: {}
+        # uptime:
+        #   command: /opt/scripts/uptime.sh
+        #   "arg.1": "--pretty"
+        #   "env.1": "TZ=UTC"
+        #   root: /rootfs
+        #   user: nobody
+        #   interval: 5m
+        #   timeout: 60s
+        #   format: event
+        #   type: kubernetes_uptime
+
       kubernetesEvents:
         disabled: false
         type: "k8s_events"
-        "syslog.format": '{type}|{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}|{cluster}|{message}'
+        "syslog.format": '{{type}}|{{timestamp::format(2006-01-02T15:04:05.999999999Z07:00)}}|{{cluster}}|{{message}}'
         output: ""
         excludeManagedFields: true
       

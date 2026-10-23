@@ -5,18 +5,13 @@ scc:
   
 collectord:
   image:
-    repository: docker.io/outcoldsolutions/collectorforkubernetes
+    repository: registry.outcold.solutions/outcoldsolutions/collectorforkubernetes
   
   clusterRole:
     name: ""
     create: true
-    rules:
-    - apiGroups:     ['extensions']
-      resources:     ['podsecuritypolicies']
-      verbs:         ['use']
-      resourceNames: ['privileged']
+    userOutputSecrets: false
     
-  # Additional configuration files for ConfigMap
   configMap:
     allAdditionalFiles:
       "es-default-index-template.json": |
@@ -138,6 +133,30 @@ collectord:
                 "@timestamp": { "type": "date"},
                 "message": {"type":"text"},
                 "collectord_errors": {"type": "keyword","ignore_above": 1024},
+                "collectord_repeat_count": {"type": "long"},
+                "collectord_repeat_span": {"type": "long"},
+                "collectord_repeat_offsets": {"type": "long"},
+                "collectord_fold_count": {"type": "long"},
+                "collectord_fold_bytes": {"type": "long"},
+                "collectord_pattern_lines": {"type": "long"},
+                "collectord_pattern_bytes": {"type": "long"},
+                "collectord_pattern_seconds": {"type": "long"},
+                "collectord": {"properties": {
+                  "repeat": {"properties": {
+                    "count": {"type": "long"},
+                    "span": {"type": "long"},
+                    "offsets": {"type": "long"}
+                  }},
+                  "fold": {"properties": {
+                    "count": {"type": "long"},
+                    "bytes": {"type": "long"}
+                  }},
+                  "pattern": {"properties": {
+                    "lines": {"type": "long"},
+                    "bytes": {"type": "long"},
+                    "seconds": {"type": "long"}
+                  }}
+                }},
                 "input":{"properties":{"type":{"ignore_above":1024,"type":"keyword"}}},
                 "container": {"properties": {
                   "name": { "ignore_above": 1024, "type": "keyword"},
@@ -276,13 +295,14 @@ collectord:
             "logs-collectord-failed-${COLLECTORD_VERSION}"]
         }
 
-    
+
+  # Liveness/readiness probes on /healthz and /readyz, at configuration.general's
+  # httpServerBinding port; set httpGet.port when a configMap file sets the binding.
   daemonset:
     livenessProbe:
       httpGet:
         host: 127.0.0.1
         path: /healthz
-        port: 11888
       initialDelaySeconds: 120
       periodSeconds: 60
       timeoutSeconds: 5
@@ -291,35 +311,15 @@ collectord:
       httpGet:
         host: 127.0.0.1
         path: /readyz
-        port: 11888
       initialDelaySeconds: 10
       periodSeconds: 15
       timeoutSeconds: 5
       failureThreshold: 3
-  daemonsetMaster:
-    livenessProbe:
-      httpGet:
-        host: 127.0.0.1
-        path: /healthz
-        port: 11888
-      initialDelaySeconds: 120
-      periodSeconds: 60
-      timeoutSeconds: 5
-      failureThreshold: 3
-    readinessProbe:
-      httpGet:
-        host: 127.0.0.1
-        path: /readyz
-        port: 11888
-      initialDelaySeconds: 10
-      periodSeconds: 15
-      timeoutSeconds: 5
-      failureThreshold: 3
+
   deployment:
     livenessProbe:
       httpGet:
         path: /healthz
-        port: 11888
       initialDelaySeconds: 120
       periodSeconds: 60
       timeoutSeconds: 5
@@ -327,7 +327,6 @@ collectord:
     readinessProbe:
       httpGet:
         path: /readyz
-        port: 11888
       initialDelaySeconds: 10
       periodSeconds: 15
       timeoutSeconds: 5
@@ -341,7 +340,8 @@ collectord:
       license: ""
       dataPath: "./data/"
       logLevel: info
-      httpServerBinding: "127.0.0.1:11888"
+      # Its own port: the other Collectord charts' DaemonSets on the host network use theirs.
+      httpServerBinding: "127.0.0.1:11892"
       "httpServerEndpoints.health": true
       "httpServerEndpoints.ready": true
       "httpServerEndpoints.metrics": false
@@ -372,6 +372,7 @@ collectord:
       thruputPerSecond: ""
       tooOldEvents: ""
       tooNewEvents: ""
+      fieldsSeparator: ""
       autoSkipGzipFiles: true
       "multioutput.async": true
       "multioutput.asyncBufferSize": 100
@@ -389,7 +390,6 @@ collectord:
           - 'v1/namespace'
           - 'apps/v1/deployment'
           - 'collectord.io/v1/configuration'
-        watchImplementation: 2
       crio:
         url: unix:///rootfs/var/run/crio/crio.sock
         timeout: 1m
@@ -412,6 +412,19 @@ collectord:
       patternRegex: '^[^\s]'
     pipeReplace: []
     pipeHash: []
+    # Log lines no thruput cap holds back and no sampling drops, per workload; over a spent cap
+    # a selected workload drops its other lines. Select by kubernetes_namespace: pod, container
+    # and image names are the workload owner's to choose.
+    # - name: payments-audit
+    #   patternRegex: '^AUDIT'
+    #   matchRegex:
+    #     kubernetes_namespace: '^payments$'
+    pipeThruputExempt: []
+    pipeEventCount:
+      disabled: true
+      labels: []
+      fields: []
+      maxSeries: 0
     
     outputs:
       elasticsearch:
@@ -420,7 +433,7 @@ collectord:
           dataStreamFailedEvents: 'logs-collectord-failed-{{agent.version}}'
           host: ""
           hosts: []
-          hostSelection: "random-with-round-robin"
+          hostSelection: "random"
           authorizationBasicUsername: ""
           authorizationBasicPassword: ""
           headers:
@@ -445,7 +458,6 @@ collectord:
             "_index_template/logs-collectord-failed-${COLLECTORD_VERSION}": "/config/es-failed-index-template.json"
           queueSize: 1024
 
-    # Input configurations
     inputs:
       containerLogs:
         disabled: false
@@ -465,6 +477,14 @@ collectord:
         thruputPerSecond: ""
         tooOldEvents: ""
         tooNewEvents: ""
+        # Read rotated logs the kubelet compressed before Collectord got to them; false counts them lost.
+        readCompressed: true
+        compressedInflateBudget: 256MiB
+        # Repeat grouping, folding (lossy) and pattern reports: off unless true here or in a
+        # workload's logs-repeat/fold/patterns-enabled annotation.
+        repeatEnabled: false
+        foldEnabled: false
+        patternsEnabled: false
         
       applicationLogs:
         disabled: false
@@ -487,6 +507,9 @@ collectord:
         tooOldEvents: ""
         tooNewEvents: ""
         maxHoldAfterClose: 1800s
+        repeatEnabled: false
+        foldEnabled: false
+        patternsEnabled: false
       
       hostLogs:
         "audit-logs":
@@ -515,22 +538,30 @@ collectord:
           eventPattern: ""
           blacklist: []
           whitelist: []
+          thruputExempt: []
+          repeatEnabled: false
+          foldEnabled: false
+          patternsEnabled: false
+        # Off: rsyslog writes these files from the journal journald reads, so lines would arrive
+        # twice. On nodes without journald, turn this on and journald off.
         "syslog":
-          disabled: false
-          controlPlaneOnly: false
+          disabled: true
           path: '/rootfs/var/log/'
           glob: ""
-          match: '^(syslog|messages)(.\d+)?$'
+          match: '^(syslog|messages|auth\.log)(.[\d\-]+)?$'
           recursive: false
           pollingInterval: 250ms
           walkingInterval: 5s
           verboseFields: false
           type: "file"
           "elasticsearch.datastream": ""
-          extraction: '^(?P<timestamp>[A-Za-z]+\s+\d+\s\d+:\d+:\d+)\s(?P<syslog_hostname>[^\s]+)\s(?P<syslog_component>[^:\[]+)(\[(?P<syslog_pid>\d+)\])?: (.+)$'
+          extraction: '^(?P<timestamp>[A-Za-z]+\s+\d+\s\d+:\d+:\d+|\d{4}-\d{2}-\d{2}T\S+)\s(?P<log__syslog__hostname>[^\s]+)\s(?P<log__syslog__appname>[^:\[]+)(\[(?P<log__syslog__procid>\d+)\])?: (.+)$'
           extractionMessageField: ""
+          # the fields naming the process that wrote a line, which groups its lines apart
+          extractionWriterFields: "log__syslog__hostname, log__syslog__appname, log__syslog__procid"
           timestampField: "timestamp"
-          timestampFormat: "Jan 2 15:04:05"
+          # RFC 3339 or the traditional `Jan 2 15:04:05`
+          timestampFormat: "@syslog"
           timestampSetMonth: false
           timestampSetDay: false
           timestampLocation: "Local"
@@ -543,12 +574,17 @@ collectord:
           eventPattern: '^[^\s]'
           blacklist: []
           whitelist: []
+          thruputExempt: []
+          repeatEnabled: false
+          foldEnabled: false
+          patternsEnabled: false
         "logs":
           disabled: false
-          controlPlaneOnly: false
           path: '/rootfs/var/log/'
           glob: ""
           match: '^(([\w\-.]+\.log(.[\d\-]+)?)|(docker))$'
+          # the files rsyslog writes from the journal on Debian and Ubuntu, which journald reads
+          exclude: '^(auth|cron|daemon|kern|lpr|mail|user|ufw)\.log(.[\d\-]+)?$'
           recursive: false
           pollingInterval: 250ms
           walkingInterval: 5s
@@ -571,6 +607,10 @@ collectord:
           eventPattern: '^[^\s]'
           blacklist: []
           whitelist: []
+          thruputExempt: []
+          repeatEnabled: false
+          foldEnabled: false
+          patternsEnabled: false
         
       
       journald:
@@ -592,8 +632,28 @@ collectord:
         eventPattern: '^[^\s]'
         blacklist: []
         whitelist: []
+        thruputExempt: []
         spawnExternalProcess: false
+        repeatEnabled: false
+        foldEnabled: false
+        patternsEnabled: false
         
+      # Scripts run on every node, their output sent as events: each entry is an
+      # [input.script::<name>] stanza (quote arg.<n> and env.<n>). root: /rootfs runs it with the
+      # node's shell and tools. A script runs only when root owns it and every directory above it,
+      # writable by no one else.
+      scripts: {}
+        # uptime:
+        #   command: /opt/scripts/uptime.sh
+        #   "arg.1": "--pretty"
+        #   "env.1": "TZ=UTC"
+        #   root: /rootfs
+        #   user: nobody
+        #   interval: 5m
+        #   timeout: 60s
+        #   format: event
+        #   type: kubernetes_uptime
+
       kubernetesEvents:
         disabled: false
         type: "events"
@@ -603,7 +663,7 @@ collectord:
       kubernetesWatch:
         "pods":
           disabled: false
-          refresh: 10m
+          refresh: 45m
           apiVersion: v1
           kind: Pod
           namespace: ""
@@ -614,7 +674,7 @@ collectord:
           excludeManagedFields: true
         "resourcequota":
           disabled: false
-          refresh: 10m
+          refresh: 45m
           apiVersion: v1
           kind: ResourceQuota
           namespace: ""
@@ -625,9 +685,20 @@ collectord:
           excludeManagedFields: true
         "nodes":
           disabled: false
-          refresh: 10m
+          refresh: 45m
           apiVersion: v1
           kind: Node
+          namespace: ""
+          type: "objects"
+          "elasticsearch.datastream": ""
+          output: ""
+          modifyValues: []
+          excludeManagedFields: true
+        "deployments":
+          disabled: false
+          refresh: 45m
+          apiVersion: apps/v1
+          kind: deployment
           namespace: ""
           type: "objects"
           "elasticsearch.datastream": ""

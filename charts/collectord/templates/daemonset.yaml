@@ -2,14 +2,14 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: {{ .Release.Name }}
+  name: {{ include "collectord.workloadName" . }}
   namespace: {{ .Release.Namespace }}
   {{- with .Values.daemonset.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   labels:
-    {{- include "collectord.labels" . | nindent 4 }}
+    {{- include "collectord.workloadLabels" . | nindent 4 }}
     {{- with .Values.daemonset.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -21,18 +21,32 @@ spec:
       {{- include "collectord.daemonset.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      name: {{ .Release.Name }}
-      {{- with .Values.daemonset.podAnnotations }}
+      name: {{ include "collectord.workloadName" . }}
       annotations:
+        # A change to the configuration files these pods mount rolls them:
+        # Collectord reads its inputs' configuration at startup. A ConfigMap managed
+        # outside the chart (configMap.create: false) gets no checksum: roll the pods
+        # with an annotation of your own under podAnnotations.
+        {{- $checksum := include "collectord.configChecksum" (dict "root" $ "keys" (list "001-general.conf" "002-daemonset.conf") "extra" (list .Values.configMap.allAdditionalFiles .Values.configMap.daemonsetAdditionalFiles)) }}
+        {{- $podAnnotations := default (dict) .Values.daemonset.podAnnotations }}
+        {{- if $checksum }}
+        checksum/config: {{ $checksum }}
+        {{- $podAnnotations = omit $podAnnotations "checksum/config" }}
+        {{- end }}
+        {{- with $podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "collectord.daemonset.selectorLabels" . | nindent 8 }}
         {{- with .Values.daemonset.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      priorityClassName: {{ .Values.priorityClass.name | default (printf "%s-critical" .Release.Name) }}
+      priorityClassName: {{ include "collectord.priorityClassName" (dict "root" $ "workload" "daemonset") | quote }}
+      {{- /* a presence test, not `with`: 0 is a valid grace period and `with` would drop it */}}
+      {{- if not (kindIs "invalid" .Values.daemonset.terminationGracePeriodSeconds) }}
+      terminationGracePeriodSeconds: {{ .Values.daemonset.terminationGracePeriodSeconds }}
+      {{- end }}
       dnsPolicy: ClusterFirstWithHostNet
       hostNetwork: true
       serviceAccountName: {{ .Values.serviceAccount.name | default .Release.Name }}
@@ -40,9 +54,8 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.daemonset.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
+      {{- with include "collectord.affinity" (dict "affinity" .Values.daemonset.affinity "exclude" .Values.excludeNodes) }}
+      {{- . | nindent 6 }}
       {{- end }}
       {{- with .Values.daemonset.tolerations }}
       tolerations:
@@ -50,7 +63,7 @@ spec:
       {{- end }}
       containers:
       - name: {{ .Release.Name }}
-        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        image: {{ include "collectord.image" . }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         {{- with .Values.daemonset.ports }}
         ports:
@@ -58,11 +71,11 @@ spec:
         {{- end }}
         {{- with .Values.daemonset.livenessProbe }}
         livenessProbe:
-          {{- toYaml . | nindent 10 }}
+          {{- include "collectord.probe" (dict "probe" . "binding" $.Values.configuration.general.httpServerBinding) | nindent 10 }}
         {{- end }}
         {{- with .Values.daemonset.readinessProbe }}
         readinessProbe:
-          {{- toYaml . | nindent 10 }}
+          {{- include "collectord.probe" (dict "probe" . "binding" $.Values.configuration.general.httpServerBinding) | nindent 10 }}
         {{- end }}
         securityContext:
           runAsUser: 0
@@ -74,10 +87,17 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        - name: KUBERNETES_NODEIP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         - name: POD_NAME
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
+        {{- with .Values.daemonset.env }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         volumeMounts:
         - name: {{ .Release.Name }}-state
           mountPath: /data
@@ -102,7 +122,7 @@ spec:
       volumes:
       - name: {{ .Release.Name }}-state
         hostPath:
-          path: /var/lib/{{ .Release.Name }}/data/
+          path: /var/lib/{{ include "collectord.workloadName" . }}/data/
           type: DirectoryOrCreate
       - name: rootfs
         hostPath:
@@ -114,7 +134,7 @@ spec:
       {{- end }}
       - name: {{ .Release.Name }}-config
         configMap:
-          name: {{ .Release.Name }}
+          name: {{ include "collectord.workloadName" . }}
           items:
           - key: 001-general.conf
             path: 001-general.conf

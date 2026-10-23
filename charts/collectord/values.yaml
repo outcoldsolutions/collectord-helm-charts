@@ -1,64 +1,162 @@
-# Default values for collectord.
-# This is a YAML-formatted file.
-# Declare variables to be substituted into your templates.
-
-# Common labels applied to all resources
 commonLabels: {}
   # Example:
   # environment: production
   # team: platform
   # cost-center: engineering
 
-# Image settings
+# Label objects as the outcoldsolutions.com manifests do (app/daemon, not app.kubernetes.io/*),
+# to apply a render over such a manifest: selectors are immutable.
+legacyLabels: false
+
+# A name for the ConfigMap, the workloads and the host state directory instead of the release
+# name (the ServiceAccount and RBAC keep it), to apply a render over a shipped manifest such as
+# collectorforkubernetes-elasticsearch.
+legacyWorkloadName: ""
+
 image:
-  # OpenShift: docker.io/outcoldsolutions/collectorforopenshift
-  # Kubernetes: docker.io/outcoldsolutions/collectorforkubernetes
-  # To use RHEL Certified Image for OpenShift, specify registry.connect.redhat.com/outcoldsolutions/collectorforopenshift
-  repository: docker.io/outcoldsolutions/collectorforkubernetes
-  tag: "26.04.5"
+  # OpenShift: registry.outcold.solutions/outcoldsolutions/collectorforopenshift
+  # A pull from registry.outcold.solutions also reaches ghcr.io and pkg-containers.githubusercontent.com:
+  # an egress allowlist needs all three.
+  # Docker Hub has the same images: docker.io/outcoldsolutions/collectorforkubernetes and
+  # docker.io/outcoldsolutions/collectorforopenshift
+  # Red Hat certified image for OpenShift: registry.connect.redhat.com/outcoldsolutions/collectorforopenshift
+  repository: registry.outcold.solutions/outcoldsolutions/collectorforkubernetes
+  tag: "26.10.1"
+  # sha256:<64 hex digits> pins the image: the tag then only labels it. The FIPS image (tag -fips)
+  # and the Red Hat certified image have digests of their own; pin the one you pull.
+  digest: ""
   pullPolicy: Always
 
-# Service Account
+# kubernetes or openshift: names the fields in the rendered configuration's commented examples only
+# (empty: from image.repository); the image decides what Collectord runs as.
+environment: ""
+
 serviceAccount:
   name: ""
   create: true
 
-# Priority Class
+# Priority classes. The DaemonSet runs as system-node-critical and the addon as
+# system-cluster-critical, so the kubelet does not evict them under disk pressure.
+# Set name, a value other than 1000000000, or create: false to run both under a class of your
+# own (<release>-critical when unnamed), which gives that up: a class of your own is capped at
+# 1000000000. create: false expects that class to exist.
 priorityClass:
   name: ""
   create: true
   value: 1000000000
+  # GKE Standard admits the built-in classes only in a namespace with a ResourceQuota for them. False
+  # there: no pod starts, an upgrade stalls with one node's pod gone, yet helm without --wait succeeds.
+  resourceQuota: true
 
-# RBAC settings
 clusterRole:
   name: ""
   create: true
-  rules:
-  # - apiGroups:
-    #   - ''
-    #   resources:
-    #   - 'pods'
-    #   - 'nodes'
-    #   verbs:
-    #   - 'get'
-    #   - 'list'
-    #   - 'watch'
+  # nodes/proxy is left out on purpose: a `get` on it can exec into any pod.
+  # Add grants under `rules` instead of overriding this list.
+  baseRules:
+  - apiGroups:
+    - ""
+    resources:
+    - events
+    - namespaces
+    - nodes
+    - nodes/metrics
+    - persistentvolumeclaims
+    - persistentvolumes
+    - pods
+    - replicationcontrollers
+    - resourcequotas
+    - services
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - apps
+    resources:
+    - daemonsets
+    - deployments
+    - replicasets
+    - statefulsets
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - batch
+    resources:
+    - cronjobs
+    - jobs
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - discovery.k8s.io
+    resources:
+    - endpointslices
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - rbac.authorization.k8s.io
+    resources:
+    - clusterroles
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - collectord.io
+    resources:
+    - configurations
+    - splunkoutputs
+    verbs:
+    - get
+    - list
+    - watch
+  - nonResourceURLs:
+    - /metrics
+    verbs:
+    - get
+    apiGroups: []
+    resources: []
+  - nonResourceURLs:
+    - /api
+    - /api/*
+    - /apis
+    - /apis/*
+    verbs:
+    - get
+    apiGroups: []
+    resources: []
+  # `get` on Secrets in every namespace, for a SplunkOutput with spec.tokenFromSecret.
+  userOutputSecrets: true
+  # Appended to baseRules, e.g. for an [input.kubernetes_watch::...] of ConfigMaps or Secrets:
+  # - apiGroups: [""]
+  #   resources: ["configmaps", "secrets"]
+  #   verbs: ["get", "list", "watch"]
+  rules: []
 
-# ConfigMap settings
 configMap:
   create: true
-  # Additional files to be added to the ConfigMap
+  # Extra files in the ConfigMap, under /config/. Collectord reads *.conf in name order,
+  # so a "101-general.conf" overrides the shipped 001-004 files.
   # Example:
+  # allAdditionalFiles:
+  #   "101-general.conf": |
+  #     [general]
+  #     logLevel = debug
   # daemonsetAdditionalFiles:
   #   "my-template.json": |
   #     {
   #       "key": "value"
   #     }
+  allAdditionalFiles: {}
   daemonsetAdditionalFiles: {}
-  daemonsetMasterAdditionalFiles: {}
   deploymentAdditionalFiles: {}
 
-# Volume mounts for CA certificates and other files
 volumeMounts:
   # Example for CA certificates:
   # - name: ca-certificates
@@ -72,10 +170,8 @@ volumeMounts:
   #   secret:
   #     secretName: custom-config
   daemonset: []
-  daemonsetMaster: []
   deployment: []
 
-# Projected volumes for advanced configuration scenarios
 projectedVolumes:
   # Example:
   # - name: combined-config
@@ -92,40 +188,57 @@ projectedVolumes:
   #           - key: password
   #             path: password.txt
   daemonset: []
-  daemonsetMaster: []
   deployment: []
     
 mountLocalTime: true
+# Breaks the onVolumeDatabase annotation, which writes under /rootfs.
 mountRootfsAsReadOnly: false
     
-# DaemonSet configuration for worker nodes
+# controlPlaneOnly: true renders this as the nodeSelector: a host-log input reads only on these nodes;
+# a Prometheus input scrapes its literal endpoints only there, and the pods it finds wherever they run.
+controlPlaneNodeSelector: node-role.kubernetes.io/control-plane
+
+# Nodes the DaemonSet and the addon stay off, as label: value, added to every required node
+# affinity term (a virtual-kubelet node mounts no host paths).
+# A label set to null, or excludeNodes: null, allows its nodes again; {} keeps both (Helm merges maps).
+excludeNodes:
+  eks.amazonaws.com/compute-type: fargate
+  type: virtual-kubelet
+
 daemonset:
   create: true
 
-  # Liveness/readiness probes for the /healthz and /readyz endpoints (Collectord 26.04.4+).
-  # Empty by default; the Splunk charts set them. Requires the internal http server enabled
-  # via configuration.general (httpServerBinding + httpServerEndpoints.health/ready).
+  # Need configuration.general's httpServerBinding and httpServerEndpoints health/ready.
   livenessProbe: {}
   readinessProbe: {}
 
-  # Workload-level annotations and labels (applied to DaemonSet resource)
-  annotations: {}
-    # Example:
-    # deployment.kubernetes.io/revision: "1"
-  
+  # The default drops Collectord's own TRACE/DEBUG lines; set both keys to null to forward them.
+  annotations:
+    collectord.collectord.io/logs-replace.ignoredebuglog-search: '^(TRACE|DEBUG) .*'
+    collectord.collectord.io/logs-replace.ignoredebuglog-val: ''
+
   labels: {}
     # Example:
     # component: "collector"
     # tier: "monitoring"
 
-  # Pod selector labels (used for matchLabels in selector)
-  # These labels will be automatically applied to pods as well
+  env: []
+    # Example:
+    # - name: GODEBUG
+    #   value: fips140=only
+
+  # Added to the selector and the pods; a selector cannot change after install.
   selectorLabels: {}
     # Example:
     # app.kubernetes.io/component: worker
     # app.kubernetes.io/part-of: collectord
 
-  # Pod-level annotations and labels (applied to pod template)
+  priorityClassName: system-node-critical
+
+  # [general] shutdownTimeout must fit inside it and the kubelet's
+  # shutdownGracePeriodCriticalPods (null: Kubernetes' 30 seconds).
+  terminationGracePeriodSeconds: null
+
   podAnnotations: {}
     # Example:
     # prometheus.io/scrape: "true"
@@ -150,129 +263,62 @@ daemonset:
       cpu: 500m
       memory: 256Mi
 
-  # Node selector for daemonset pods
-  nodeSelector: {}
-    # Example:
-    # kubernetes.io/os: linux
+  nodeSelector:
+    kubernetes.io/os: linux
 
-  # Affinity for daemonset pods
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-        - matchExpressions:
-          - key: node-role.kubernetes.io/control-plane
-            operator: DoesNotExist
+  affinity: {}
 
-  # Tolerations for daemonset pods
   tolerations:
   - operator: "Exists"
     effect: "NoSchedule"
   - operator: "Exists"
     effect: "NoExecute"
 
-# DaemonSet configuration for master nodes
-daemonsetMaster:
-  create: true
-
-  # Liveness/readiness probes for the /healthz and /readyz endpoints (Collectord 26.04.4+).
-  # Empty by default; the Splunk charts set them. Requires the internal http server enabled
-  # via configuration.general (httpServerBinding + httpServerEndpoints.health/ready).
-  livenessProbe: {}
-  readinessProbe: {}
-
-  # Workload-level annotations and labels (applied to DaemonSet resource)
-  annotations: {}
-    # Example:
-    # deployment.kubernetes.io/revision: "1"
-  
-  labels: {}
-    # Example:
-    # component: "collector-master"
-    # tier: "monitoring"
-
-  # Pod selector labels (used for matchLabels in selector)
-  # These labels will be automatically applied to pods as well
-  selectorLabels: {}
-    # Example:
-    # app.kubernetes.io/component: master
-    # app.kubernetes.io/part-of: collectord
-
-  # Pod-level annotations and labels (applied to pod template)
-  podAnnotations: {}
-    # Example:
-    # prometheus.io/scrape: "true"
-    # prometheus.io/port: "9090"
-  
-  podLabels: {}
-    # Example:
-    # version: "v1.0.0"
-    # environment: "production"
-  
-  ports: []
-    # Example:
-    # - name: metrics
-    #   containerPort: 11888
-    #   protocol: TCP
-
-  # Resources
-  resources:
-    limits:
-      cpu: 2000m
-      memory: 1024Mi
-    requests:
-      cpu: 500m
-      memory: 256Mi
-
-  # Node selector for daemonset-master pods
-  nodeSelector: {}
-    # Example:
-    # kubernetes.io/os: linux
-
-  # Affinity for daemonset-master pods
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-        - matchExpressions:
-          - key: node-role.kubernetes.io/control-plane
-            operator: Exists
-
-  # Tolerations for daemonset-master pods
-  tolerations:
-  - operator: "Exists"
-    effect: "NoSchedule"
-  - operator: "Exists"
-    effect: "NoExecute"
-
-# Deployment configuration for addon
 deployment:
   create: true
 
-  # Liveness/readiness probes for the /healthz and /readyz endpoints (Collectord 26.04.4+).
-  # Empty by default; the Splunk charts set them. The addon runs off the host network, so
-  # its probes use the pod IP (no httpGet.host) and 004-addon.conf binds 0.0.0.0:11888.
+  # Root and spc_t (on SELinux nodes) only to read the database the DaemonSet writes
+  # as root under /var/lib/<release>/data; otherwise unprivileged.
+  securityContext:
+    runAsUser: 0
+    privileged: false
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    seccompProfile:
+      type: RuntimeDefault
+    seLinuxOptions:
+      type: spc_t
+
+  # Need configuration.general's http server; the addon is off the host network, so they
+  # probe the pod IP (no httpGet.host).
   livenessProbe: {}
   readinessProbe: {}
 
-  # Workload-level annotations and labels (applied to Deployment resource)
-  annotations: {}
-    # Example:
-    # deployment.kubernetes.io/revision: "1"
-  
+  annotations:
+    collectord.collectord.io/logs-replace.ignoredebuglog-search: '^(TRACE|DEBUG) .*'
+    collectord.collectord.io/logs-replace.ignoredebuglog-val: ''
+
   labels: {}
     # Example:
     # component: "collector-addon"
     # tier: "monitoring"
 
-  # Pod selector labels (used for matchLabels in selector)
-  # These labels will be automatically applied to pods as well
+  env: []
+
+  # Added to the selector and the pods; a selector cannot change after install.
   selectorLabels: {}
     # Example:
     # app.kubernetes.io/component: addon
     # app.kubernetes.io/part-of: collectord
 
-  # Pod-level annotations and labels (applied to pod template)
+  priorityClassName: system-cluster-critical
+
+  # [general] shutdownTimeout must fit inside it and the kubelet's
+  # shutdownGracePeriodCriticalPods (null: Kubernetes' 30 seconds).
+  terminationGracePeriodSeconds: null
+
   podAnnotations: {}
     # Example:
     # prometheus.io/scrape: "true"
@@ -283,21 +329,15 @@ deployment:
     # version: "v1.0.0"
     # environment: "production"
   
-  # Container ports to declare on the collectord container. Empty by default -
-  # Collectord does not need a declared port to work, but Prometheus pod discovery
-  # builds one target per declared port, and scrape configurations that match the
-  # prometheus.io/port annotation against the pod's declared ports drop a pod that
-  # declares none. Declare the internal http server port here when you scrape
-  # /metrics/prometheus - and enable it in configuration.general
-  # (httpServerEndpoints.metrics = true). The addon runs off the host network, so
-  # 004-addon.conf already binds 0.0.0.0:11888 and no hostPort is claimed.
+  # Prometheus configurations that match prometheus.io/port against declared ports skip a pod that
+  # declares none: to scrape /metrics/prometheus, declare the port here and set
+  # httpServerEndpoints.metrics = true in configuration.general.
   ports: []
     # Example:
     # - name: metrics
     #   containerPort: 11888
     #   protocol: TCP
 
-  # Resources
   resources:
     limits:
       cpu: 1000m
@@ -306,12 +346,9 @@ deployment:
       cpu: 200m
       memory: 64Mi
 
-  # Node selector for addon pod
-  nodeSelector: {}
-    # Example:
-    # kubernetes.io/os: linux
+  nodeSelector:
+    kubernetes.io/os: linux
 
-  # Affinity for addon pod
   affinity: {}
     # Example (prefer scheduling on the AKS system node pool):
     # nodeAffinity:
@@ -324,7 +361,6 @@ deployment:
     #         values:
     #         - system
 
-  # Tolerations for addon pod
   tolerations: []
     # Example (allow scheduling on a tainted system node pool):
     # - key: "CriticalAddonsOnly"

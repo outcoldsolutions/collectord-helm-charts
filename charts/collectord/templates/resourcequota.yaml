@@ -1,0 +1,37 @@
+{{- /*
+A quota scoped to the built-in critical classes the workloads run under: a
+cluster may admit those classes only in a namespace holding one (ResourceQuota
+admission limitedResources; GKE Standard does). 1G pods limits nothing. Absent
+(`helm upgrade --reuse-values` from an earlier chart), resourceQuota is on.
+*/ -}}
+{{- $enabled := .Values.priorityClass.resourceQuota -}}
+{{- if kindIs "invalid" $enabled }}{{ $enabled = true }}{{ end -}}
+{{- $classes := list -}}
+{{- range $workload := list "daemonset" "deployment" -}}
+{{- if (index $.Values $workload).create -}}
+{{- $class := include "collectord.priorityClassName" (dict "root" $ "workload" $workload) -}}
+{{- if has $class (list "system-node-critical" "system-cluster-critical") -}}
+{{- $classes = append $classes $class -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and $enabled $classes -}}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ .Release.Name }}-critical-pods
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "collectord.labels" . | nindent 4 }}
+spec:
+  hard:
+    pods: 1G
+  scopeSelector:
+    matchExpressions:
+    - scopeName: PriorityClass
+      operator: In
+      values:
+      {{- range $classes | uniq | sortAlpha }}
+      - {{ . }}
+      {{- end }}
+{{- end }}
