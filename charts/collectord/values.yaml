@@ -21,11 +21,11 @@ image:
   # docker.io/outcoldsolutions/collectorforopenshift
   # Red Hat certified image for OpenShift: registry.connect.redhat.com/outcoldsolutions/collectorforopenshift
   repository: registry.outcold.solutions/outcoldsolutions/collectorforkubernetes
-  tag: "26.10.1"
+  tag: "26.10.2"
   # sha256:<64 hex digits> pins the image: the tag then only labels it. The FIPS image (tag -fips)
   # and the Red Hat certified image have digests of their own; pin the one you pull.
   digest: ""
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
 
 # kubernetes or openshift: names the fields in the rendered configuration's commented examples only
 # (empty: from image.repository); the image decides what Collectord runs as.
@@ -234,6 +234,9 @@ daemonset:
     # app.kubernetes.io/part-of: collectord
 
   priorityClassName: system-node-critical
+
+  updateStrategy:
+    type: RollingUpdate
 
   # [general] shutdownTimeout must fit inside it and the kubelet's
   # shutdownGracePeriodCriticalPods (null: Kubernetes' 30 seconds).

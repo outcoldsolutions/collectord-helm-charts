@@ -15,7 +15,7 @@ metadata:
     {{- end }}
 spec:
   updateStrategy:
-    type: RollingUpdate
+    {{- toYaml .Values.daemonset.updateStrategy | nindent 4 }}
   selector:
     matchLabels:
       {{- include "collectord.daemonset.selectorLabels" . | nindent 6 }}

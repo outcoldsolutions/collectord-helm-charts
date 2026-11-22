@@ -479,6 +479,7 @@ collectord:
           compressionLevel: "default"
           threads: 2
           threadsAlgorithm: "weighted"
+          maxConnAge: ""
           put:
             "_ilm/policy/logs-collectord": "/config/es-default-index-lifecycle-management-policy.json"
             "_index_template/logs-collectord-${COLLECTORD_VERSION}": "/config/es-default-index-template.json"

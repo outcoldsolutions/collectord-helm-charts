@@ -453,6 +453,7 @@ collectord:
           compressionLevel: "default"
           threads: 2
           threadsAlgorithm: "weighted"
+          maxConnAge: ""
           put:
             "_index_template/logs-collectord-${COLLECTORD_VERSION}": "/config/es-default-index-template.json"
             "_index_template/logs-collectord-failed-${COLLECTORD_VERSION}": "/config/es-failed-index-template.json"

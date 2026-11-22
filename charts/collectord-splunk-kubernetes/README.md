@@ -228,6 +228,270 @@ collectord:
 
 After that you can reference this output in annotations like `collectord.io/output=splunk::apps`
 
+### Sending events over Splunk-to-Splunk (S2S)
+
+`outputs.s2s` sends events and metrics-index records to the indexers' receiving port (a `splunktcp`
+input, `splunktcp-ssl` for `tls://`) with the protocol Splunk forwarders use, instead of to HTTP
+Event Collector. The indexers must run Splunk 9.1 or later. Make it the default output, or name it
+(`s2s`, `s2s::<name>`) in an input's `output` or `metricsOutput`; the HEC output (`outputs.splunk`)
+can stay beside it. Indexer acknowledgements are always on: an event is acknowledged to its source
+only once an indexer confirmed it, and whatever a connection carried when it ended is sent again
+(and may be indexed twice: Splunk does not deduplicate). Each thread holds one connection and moves
+to the next url every `loadBalanceFrequency`.
+
+The S2S output is in beta in 26.10.2.
+
+```yaml
+collectord:
+  configuration:
+    general:
+      defaultOutput: s2s
+    outputs:
+      s2s:
+        default:
+          url: 'tls://idx1.example.com:9998'
+          urls:
+          - 'tls://idx2.example.com:9998'
+          # the forwarder token of the indexers' [splunktcptoken://...] stanza, if they have one
+          token: ''
+          defaultIndex: 'kubernetes'
+          defaultMetricsIndex: 'kubernetes_metrics'
+```
+
+| Key | Default | |
+| --- | --- | --- |
+| `url`, `urls` | | `tcp://host:port` or `tls://host:port` |
+| `urlSelection` | `random` | `random`, `round-robin` (each thread starts on its own url) or `random-with-round-robin` (a random start, then the next url): where a thread starts and moves to |
+| `token` | | the forwarder token of the indexers' `[splunktcptoken://...]` stanza |
+| `insecure`, `minTLSVersion`, `maxTLSVersion`, `tlsCipherSuites`, `tlsCurvePreferences`, `caPath`, `caName`, `clientCertPath`, `clientKeyPath` | `false`, the rest empty | TLS for `tls://` urls, as on `outputs.splunk`; a client certificate for an input with `requireClientCert` |
+| `frequency` | `5s` | how often a thread sends what it holds |
+| `batchSize` | `768K` | the bytes of one batch, as they go on the wire |
+| `events` | `0` | the events of one batch; `0` leaves it to `batchSize` |
+| `threads`, `threadsAlgorithm` | `2`, `weighted` | connections per Collectord instance, and how pipelines share them |
+| `excludeFields` | `[]` | fields left out of every event, as on `outputs.splunk`: a list of names (`[kubernetes_pod_ip]`), or the conf's map (`{kubernetes_pod_ip: true}`); on a named output a `false` entry keeps a field the main output leaves out |
+| `queueSize` | `1024` | as on `outputs.splunk` |
+| `ackTimeout` | `5m` | how long a batch waits for its acknowledgement before the connection is given up and the batch sent again; 5s at least |
+| `connectTimeout` | `20s` | a connect: TCP, TLS and the S2S handshake; 1s at least |
+| `writeTimeout` | `5m` | each write: an indexer whose queues are blocked stops reading, and a write given up sooner sends its batches again to another while it still indexes them; `frequency` at least |
+| `backoffOnFailure` | `30s` | how long an indexer whose connect failed is tried after the others, and how long one that ended a new connection before acknowledging anything (a refused `token`) is not connected to at all; doubled with each failure in a row up to ten times; 1s at least |
+| `loadBalanceFrequency` | `30s` | how long a connection takes batches before the thread moves to the next url; 1s at least |
+| `idleTimeout` | `frequency` × 10 | closes a connection nothing went through for this long; `frequency` at least |
+| `channelIdleTimeout` | `idleTimeout` | closes a channel (one source, host and sourcetype) unused for this long; `frequency` at least |
+| `maxChannels` | `0`: the indexer's `channel_limit` | the channels one connection holds open; 2 at least, one is the info event's |
+| `compression` | `false` | zlib, as a forwarder's `compressed = true`: an eighteenth of the bytes for logs, an eleventh for metrics, for more of Collectord's CPU (still less than HEC's) |
+| `shutdownTimeout` | `5s` | how long a shutdown waits for owed acknowledgements; keep it within the pod's `terminationGracePeriodSeconds`; 1s at least |
+| `loadBalanceVolume` | `0`: by time alone | the bytes after which a connection moves to the next url |
+| `dnsResolutionInterval` | `5m` | every address a url's host name resolves to is an indexer (a headless Service spreads over its pods), resolved again this often; 10s at least |
+| `proxyUrl` | | a SOCKS5 proxy, `socks5://[user:password@]host:port`, or `socks5h://` for the proxy to resolve the names; an HTTP proxy cannot carry S2S |
+| `indexerDiscovery.managerUrl` | | a cluster manager's `https://cm:8089`: the indexers it names join `url` and `urls`, which may be empty; an SSL one is verified against `caName`, else the address the manager names. The manager is asked through `proxyUrl` when that is set. A named output that sets `url`, `urls` or this key takes none of the three from the main output, nor its manager credentials |
+| `indexerDiscovery.token`, `.username`, `.password` | | a Splunk identity on the manager (any role); a forwarder's `pass4SymmKey` is not supported |
+| `indexerDiscovery.site`, `.failover` | `default`, `true` | the indexers' site, and its failover targets when it has none Up |
+| `indexerDiscovery.insecure`, `.caPath`, `.caName` | `false`, none, none | TLS for the manager's https |
+| `defaultIndex` | | the index of an event whose input names none |
+| `defaultMetricsIndex` | | the index of a metrics-index record that names none |
+| `duplicateFieldsWithUnderscore`, `requireExplicitIndex`, `maximumMessageLength`, `includeEventID`, `timestampPrecision` | `false`, `false`, none, `false`, `3` | as on `outputs.splunk` |
+| `continuesFrom` | | the output this one replaced for the same Splunk (`splunk`, `splunk::<name>`): a log it holds no position for continues from that output's; never inherited by a named output |
+
+- No token supplies a default index over S2S: without `defaultIndex` and `defaultMetricsIndex`
+  such records land in the `splunktcp` input's index (`main`).
+- An event for an index the indexers do not have is acknowledged and dropped: nothing over S2S
+  tells Collectord, and `incorrectIndexBehavior` is HEC's. The indexer logs `Received event for
+  unconfigured/disabled/deleted index` in `_internal`; `lastChanceIndex` in the indexers'
+  `indexes.conf` keeps such events in an index of your choice.
+- A metrics index keeps whole seconds unless it sets `metric.timestampResolution = ms`.
+- Without `compression`, S2S sends 13 to 16 times the bytes of HTTP Event Collector's gzip for
+  logs, 7 times for metrics; with it, a quarter fewer than HEC's for logs (about 100 bytes an
+  event) and fewer for metrics, for half again Collectord's CPU on the output, still below HEC's.
+  Turn it on across a WAN, a VPN or a metered link.
+- A proxy is SOCKS5 (`proxyUrl`): an HTTP proxy cannot carry S2S, a TCP stream.
+- Index-time props on the indexers (`SEDCMD`, `TRANSFORMS`) run on these events as on HEC events.
+- An indexer that stops or restarts says so on its connections, and Collectord leaves it at once,
+  as a forwarder with `useACK` does: what each connection had unacknowledged is sent again and may
+  be indexed twice. As it stops, the indexer logs these ERRORs for the connections it ends, a
+  forwarder's too, and they are expected: `there was an error writing data to storage` and
+  `Encountered S2S Exception='Client is unable to process ACKs' … Terminating client connection`.
+  A cluster peer's `splunk offline` sends no notice: it closes the connections about 3 s in, and
+  Collectord sends again what they had unacknowledged ("ended with … events unacknowledged", a
+  WARN), which may be indexed twice too.
+- With another default output, `outputs.splunk` without a url is no output. `SplunkOutput`
+  objects need it configured: they are HEC endpoints.
+- `outputs.s2s.default` renders without a url too when a named S2S output is set, which takes
+  what it leaves unset from it, and with `defaultOutput: s2s`, for a url and token kept in a
+  mounted Secret (see "Using secrets") beside the TLS keys set here.
+
+#### Switching from HEC
+
+1. Set `defaultIndex` and `defaultMetricsIndex` on `outputs.s2s.default` first: no HEC token
+   supplies an index over S2S, and without them records land in the `splunktcp` input's index.
+2. Set `general.defaultOutput` to `s2s` (or an input's `output` from `splunk::<name>` to
+   `s2s::<name>`) at a quiet moment: the upgrade restarts the pods, and the batches in flight then
+   are sent again.
+3. Set `continuesFrom: splunk` on `outputs.s2s.default` (`splunk::<name>` on `outputs.s2s.<name>`)
+   when S2S replaces HEC for the same Splunk: every log file and journal then continues where HEC's
+   acknowledgements left it. Without it the S2S output reads the logs as a new output does (a live
+   file from its start, unless a dry run to `devnull` left a position), which is right for another
+   Splunk, and Collectord says so at startup. A container
+   still sent to HEC as well (`collectord.io/logs-output: splunk,s2s`) never takes HEC's positions,
+   nor does a volume-log configuration while another of the pod's sends to HEC. Switching
+   back finds HEC's own positions from before the switch, so what S2S sent since is sent again.
+
+```yaml
+collectord:
+  configuration:
+    general:
+      defaultOutput: s2s
+    outputs:
+      s2s:
+        default:
+          url: tls://indexer1.example.com:9998
+          defaultIndex: kubernetes
+          defaultMetricsIndex: kubernetes_metrics
+          continuesFrom: splunk
+```
+
+`continuesFrom` is on `outputs.splunk` too, for an HEC output that replaced another
+(`splunk::compliance` after `splunk::audit`).
+
+A Collectord release before the S2S output does not start with `defaultOutput: s2s` (unknown
+output): roll the values back with the release.
+
+#### Coming from outputs.conf
+
+| outputs.conf (`[tcpout]`, `[tcpout:<group>]`) | `outputs.s2s` |
+| --- | --- |
+| `server` | `url`, `urls` (`tcp://` or `tls://` each) |
+| `autoLBFrequency` | `loadBalanceFrequency` |
+| `autoLBVolume` | `loadBalanceVolume` |
+| `useACK` | always on |
+| `readTimeout` | `ackTimeout` |
+| `connectionTimeout` | `connectTimeout` |
+| `writeTimeout` | `writeTimeout` |
+| `backoffOnFailure` | `backoffOnFailure`, doubled with each failure in a row |
+| `ackTimeoutOnShutdown` | `shutdownTimeout` |
+| `compressed` | `compression` |
+| `token` | `token` |
+| `dnsResolutionInterval` | `dnsResolutionInterval` |
+| `socksServer`, `socksUsername`, `socksPassword`, `socksResolveDNS` | `proxyUrl`: `socks5://user:password@host:port`, `socks5h://` to resolve at the proxy |
+| `sslRootCAPath`, `clientCert`, `sslVerifyServerCert`, `sslCommonNameToCheck`, `sslAltNameToCheck` | `caPath`; `clientCertPath` and `clientKeyPath` (an unencrypted key); `insecure`; `caName` sets the name verified and sent |
+| `sslVersions`, `cipherSuite`, `ecdhCurves` | `minTLSVersion`, `maxTLSVersion`, `tlsCipherSuites`, `tlsCurvePreferences` |
+| `channelTTL`, `channelReapInterval` | `channelIdleTimeout`; idle channels are swept every 10 s (half `channelIdleTimeout` when that is shorter), no key; the channel limit is the indexer's, or `maxChannels` |
+| `indexerDiscovery`, `[indexer_discovery:<name>]` | `indexerDiscovery.managerUrl`, with a Splunk token (`indexerDiscovery.token`) or user on the manager instead of `pass4SymmKey`; `indexerDiscovery.site` |
+| `forwardedindex.<n>.whitelist` / `blacklist` | not needed: an input names its output and index |
+| `maxQueueSize`, persistent queues | not needed: an input keeps its place until the indexer acknowledges, and the output's memory budget bounds what is in flight |
+| a server's weight (other senders) | not supported: the urls take turns, a repeated url is one indexer |
+
+Splunk Cloud Platform (not tested against a Cloud stack): its universal forwarder credentials
+package names the stack's receivers, `inputs1.<stack>.splunkcloud.com:9997` and on, which go in
+`url` and `urls` as `tls://` urls, and carries the CA (`caPath`) and the forwarder's client
+certificate and key (`clientCertPath`, `clientKeyPath`). Collectord reads an unencrypted PEM key: a
+key the package encrypts with its `sslPassword` needs decrypting first.
+
+### Sending over OTLP
+
+`outputs.otlp` sends logs to `<url>/v1/logs` and metrics to `<url>/v1/metrics` of an OTLP/HTTP
+receiver, or with `protocol: grpc` calls an OTLP/gRPC receiver's Export methods: an OpenTelemetry
+Collector, or a backend that takes OTLP directly (the table below). Make it the
+default output, or name it (`otlp`, `otlp::<name>`) in an input's `output` or `metricsOutput`;
+the HEC output (`outputs.splunk`) can stay beside it. An event is
+acknowledged to its source once the receiver accepted its batch (a 2xx over HTTP; over gRPC a 200 with `grpc-status: 0`); a refused batch is sent
+again, or split down to the record the receiver refuses alone, which is dropped; what a receiver
+refused in a batch it stored (a partial success) is counted and not sent again.
+
+The OTLP output is in beta in 26.10.2.
+
+```yaml
+collectord:
+  configuration:
+    general:
+      defaultOutput: otlp
+    outputs:
+      otlp:
+        default:
+          url: 'http://otel-collector.observability.svc:4318'
+          token: ''
+          defaultIndex: 'kubernetes'
+          defaultMetricsIndex: 'kubernetes_metrics'
+```
+
+| Key | Default | |
+| --- | --- | --- |
+| `url` | | the receiver's base: `/v1/logs` and `/v1/metrics` go under its path |
+| `logsUrl`, `metricsUrl` | | a signal's endpoint, posted to as is, for a backend whose signals live apart |
+| `protocol` | `http` | `grpc` for OTLP/gRPC (HTTP/2: `h2` on `https://`, cleartext on `http://`): the urls name a host and a port and no path (`http://otel-collector.observability.svc:4317`), an `http://` url goes through no HTTP proxy (`https://` or a `socks5://` proxy do), and each of `threads` keeps a connection of its own |
+| `signals` | `logs, metrics` | what the output sends; a signal left out is acknowledged and dropped |
+| `token` | | sent as `Authorization: Bearer <token>` |
+| `headers` | `{}` | request headers, a backend's API key among them (`x-honeycomb-team`, `dd-api-key`) |
+| `insecure`, `minTLSVersion`, `maxTLSVersion`, `tlsCipherSuites`, `tlsCurvePreferences`, `caPath`, `caName`, `clientCertPath`, `clientKeyPath` | `false`, the rest empty | TLS, as on `outputs.splunk` |
+| `proxyUrl`, `proxyBasicAuth` | | an HTTP proxy, as on `outputs.splunk` |
+| `timeout` | `30s` | one request; 1s at least |
+| `maxConnAge` | | how long the connections take requests before the output opens new ones, so DNS or a load balancer can pick another receiver; empty or `0` never replaces them by age, 1s at least |
+| `frequency` | `5s` | how often a thread sends what it holds |
+| `batchSize` | `4M` | the bytes of one batch after compression |
+| `rawBatchSize` | `4M`, `3M` under `grpc` | the uncompressed bytes at which a batch seals, before `batchSize`; under `grpc` a receiver refuses a message over 4 MiB uncompressed by default (the Collector's `max_recv_msg_size_mib`) |
+| `events` | `0` | the records of one batch; `0` leaves it to the sizes |
+| `compression`, `compressionLevel` | `gzip`, the codec's default | `gzip`, which every receiver takes, `zstd`, or `none` |
+| `threads`, `threadsAlgorithm` | `1`, round-robin | senders per Collectord instance, and how pipelines share them |
+| `queueSize` | `1024` | as on `outputs.splunk` |
+| `dedicatedClientPerIndex` | `false` | one batch stream per index; off, one request carries several indexes |
+| `defaultIndex`, `defaultMetricsIndex` | `kubernetes`, `kubernetes_metrics` | the index of an event, or a metrics-index record, whose input names none: no token supplies one over OTLP. The chart's values set the product's index names; the daemon's own default is none |
+| `envelope` | `splunk` | the resource attributes an event's index, source and sourcetype travel as: `splunk` (`com.splunk.index`, `com.splunk.source`, `com.splunk.sourcetype`, what the Collector's Splunk HEC exporter reads), `collectord` (`io.collectord.index`, `io.collectord.source`, `io.collectord.sourcetype`) or `none` |
+| `attributes` | `collectord` | the fields' names: Collectord's (`kubernetes_pod_name`), or `otel`, the OpenTelemetry semantic conventions (`k8s.pod.name`, `k8s.pod.label.<key>`) with `service.name`, `service.namespace`, `service.version` and `service.instance.id` derived as they describe |
+| `excludeFields` | `[]` | fields left out, by name in either spelling; under `otel`, also by the name sent; a list or a map, as on `outputs.s2s` |
+| `temporality` | `cumulative` | `delta` for a backend that takes only deltas: a monotonic sum or histogram as the change since the series' previous point |
+| `metricLabelPrefix` | | before a scraped label's name on a data point; `metric.label.` names it as the Monitoring Kubernetes app reads it through a gateway into Splunk |
+| `distributions` | `otlp` | how a histogram or summary travels: one OTLP point, or `series`, its classic `_bucket`, `_count`, `_sum` and quantile series as the Splunk output sends them |
+| `honorIndexType` | `false` | `true` sends what the Splunk output sends for each input's `indexType` (a sampler's events-index line as a log record), for the app's events-index views behind a gateway |
+| `continuesFrom` | | the output this one replaced for the same Splunk through a gateway (`splunk`, `splunk::<name>`): a log it holds no position for continues from that output's; never inherited by a named output |
+
+What each backend needs, from its published documentation:
+
+| Backend | Destination and credentials | Settings |
+| --- | --- | --- |
+| OpenTelemetry Collector, into Splunk with its Splunk HEC exporter | the Collector's `url` | `envelope: splunk`, `metricLabelPrefix: metric.label.`, `distributions: series`, `honorIndexType: true`: what the Monitoring Kubernetes app reads |
+| Honeycomb | `url: https://api.honeycomb.io` (EU `https://api.eu1.honeycomb.io`), `headers: {x-honeycomb-team: ...}` | `envelope: none`, `attributes: otel` (`service.name` files the logs by service); metrics land in its managed `Metrics` dataset |
+| Datadog | `url: https://otlp.datadoghq.com` (the site's OTLP host), `headers: {dd-api-key: ...}` | `envelope: none`, `attributes: otel`, `temporality: delta` (cumulative is refused), `batchSize: 500KB` (metrics take 512 KiB compressed) |
+| New Relic | `url: https://otlp.nr-data.net` (EU `https://otlp.eu01.nr-data.net`), `headers: {api-key: ...}` (the license key) | `envelope: none`, `attributes: otel`, `temporality: delta` (recommended), `rawBatchSize: 800KB` (a request over 1 MB is answered 413 and split), `excludeFields` past 64 resource attributes |
+| Grafana Cloud | `url: https://otlp-gateway-<region>.grafana.net/otlp`, `headers: {authorization: Basic <base64 of instance id:token>}` | `envelope: none`, `attributes: otel`, `excludeFields` past 40 resource or 40 metric attributes |
+| Dynatrace | `url: https://<environment>.live.dynatrace.com/api/v2/otlp`, `token` (a platform token) | `envelope: none`, `attributes: otel`, `temporality: delta` (cumulative is not ingested); summaries are dropped unless `distributions: series` |
+| Splunk Observability Cloud | `metricsUrl: https://ingest.<realm>.observability.splunkcloud.com/v2/datapoint/otlp`, `signals: metrics`, `headers: {x-sf-token: ...}` | `envelope: none`, `attributes: otel`; no OTLP logs endpoint |
+
+- No token supplies a default index over OTLP: without `defaultIndex` and `defaultMetricsIndex`
+  a record whose input names none goes without one, and a receiver that wants one refuses it.
+- Through a gateway into Splunk an event for an index Splunk does not have is dropped by the
+  gateway, with the rest of the request it travelled in when the gateway forwards them
+  together: Collectord got its 2xx and counts nothing lost, and `incorrectIndexBehavior` is
+  HEC's. Create the indexes the inputs and annotations name before switching.
+- Through a gateway into Splunk a dimension with several values (a pod's, namespace's, node's
+  or workload's labels, a container's labels) of a metrics-index record arrives as one value
+  holding the whole list. The app's dashboards filter and list labels either way; a search of
+  your own that names one label exactly (`kubernetes.pod.labels="app=web"`) matches nothing in the
+  metrics index, so match it within the list (`kubernetes.pod.labels="*app=web*"`).
+- A Collectord instance on `outputs.otlp` charts in the app's Collectord metrics view and pages
+  through its Alert Catalog templates as one on HEC does, where its own metrics
+  (`collectordMetrics`) reach this Splunk: through HEC, or through a gateway with the four
+  settings above; its own `otlp_*` series (requests by status, rejected and dropped records,
+  points `temporality: delta` held back) are forwarded only when `collectordMetrics.whitelist`
+  names them.
+- `outputs.otlp.default` renders when it has a `url`, `logsUrl` or `metricsUrl`; without one, when
+  a named OTLP output is set, which takes what it leaves unset from it, and with
+  `defaultOutput: otlp`, for a url and token kept in a mounted Secret (see "Using secrets").
+- With another default output, `outputs.splunk` without a url is no output, and a named
+  `outputs.splunk.<name>` beside it still is. `SplunkOutput` objects need `outputs.splunk`
+  configured: they are HEC endpoints.
+- `collectord verify` posts an empty request to each signal's endpoint (reachability and the
+  token), then one record per index the inputs name for it (an index a template resolves is not
+  probed); under `envelope: none` one record per signal, since the receiver takes no index. Under
+  `protocol: grpc` it says when the url looks like an OTLP/HTTP port (the Collector's 4318).
+- An output new to a node reads the logs as a new output does: a live file from its start.
+  Switch at a quiet moment, with `continuesFrom: splunk` (`splunk::<name>`) when the receiver
+  forwards into the same Splunk the HEC output sent to: the file and journal positions then carry
+  over, as they do for `outputs.s2s`; Collectord says at startup when it holds no position while
+  the HEC output's are in its database.
+- A Collectord release before this output does not start with `defaultOutput: otlp` (unknown
+  output): roll the values back with the release.
+- Upgrading: a secondary HEC output named `otlp` (`outputs.splunk.otlp`) must be renamed first;
+  the OTLP output takes that name, and Collectord refuses to start with both.
+
 ### Sending metrics to a Splunk metrics index
 
 Every metrics-producing input ships shaped for an events index, which is what the Monitoring

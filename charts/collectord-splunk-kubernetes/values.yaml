@@ -132,6 +132,7 @@ collectord:
           url: ""
           urls: []
           urlSelection: random
+          loadBalanceFrequency: 5m
           token: ""
           insecure: false
           minTLSVersion: ""
@@ -157,6 +158,7 @@ collectord:
           threads: 2
           threadsAlgorithm: "weighted"
           maxConnsPerHost:
+          maxConnAge: ""
           excludeFields: []
           duplicateFieldsWithUnderscore: false
           requireExplicitIndex: false
@@ -165,6 +167,102 @@ collectord:
           includeEventID: false
           queueSize: 1024
           timestampPrecision: 
+          continuesFrom: ""
+      s2s:
+        default:
+          url: ""
+          urls: []
+          urlSelection: random
+          token: ""
+          insecure: false
+          minTLSVersion: ""
+          maxTLSVersion: ""
+          tlsCipherSuites: ""
+          tlsCurvePreferences: ""
+          caPath: ""
+          caName: ""
+          clientCertPath: ""
+          clientKeyPath: ""
+          frequency: 5s
+          batchSize: 768K
+          events: 0
+          threads: 2
+          threadsAlgorithm: "weighted"
+          queueSize: 1024
+          ackTimeout: 5m
+          connectTimeout: 20s
+          writeTimeout: 5m
+          backoffOnFailure: 30s
+          loadBalanceFrequency: 30s
+          idleTimeout: ""
+          channelIdleTimeout: ""
+          maxChannels: 0
+          compression: false
+          shutdownTimeout: 5s
+          loadBalanceVolume: 0
+          dnsResolutionInterval: 5m
+          proxyUrl: ""
+          indexerDiscovery:
+            managerUrl: ""
+            token: ""
+            username: ""
+            password: ""
+            site: default
+            failover: true
+            insecure: false
+            caPath: ""
+            caName: ""
+          defaultIndex: ""
+          excludeFields: []
+          duplicateFieldsWithUnderscore: false
+          requireExplicitIndex: false
+          defaultMetricsIndex: ""
+          maximumMessageLength: ""
+          includeEventID: false
+          timestampPrecision: 3
+          continuesFrom: ""
+      otlp:
+        default:
+          url: ""
+          logsUrl: ""
+          metricsUrl: ""
+          protocol: http
+          signals: "logs, metrics"
+          token: ""
+          headers: {}
+          insecure: false
+          minTLSVersion: ""
+          maxTLSVersion: ""
+          tlsCipherSuites: ""
+          tlsCurvePreferences: ""
+          caPath: ""
+          caName: ""
+          clientCertPath: ""
+          clientKeyPath: ""
+          proxyUrl: ""
+          proxyBasicAuth: ""
+          timeout: 30s
+          maxConnAge: ""
+          frequency: 5s
+          batchSize: 4M
+          rawBatchSize: ""
+          events: 0
+          compression: gzip
+          compressionLevel: ""
+          threads: 1
+          threadsAlgorithm: ""
+          queueSize: 1024
+          dedicatedClientPerIndex: false
+          defaultIndex: "kubernetes"
+          defaultMetricsIndex: "kubernetes_metrics"
+          envelope: splunk
+          attributes: collectord
+          excludeFields: []
+          temporality: cumulative
+          metricLabelPrefix: ""
+          distributions: otlp
+          honorIndexType: false
+          continuesFrom: ""
   
     inputs:
       collectordMetrics:
@@ -200,6 +298,7 @@ collectord:
         timeout: 30s
         output: ""
         authorization: []
+        authorizationNamespaces: {}
     
       systemStats:
         disabled:
@@ -873,6 +972,39 @@ collectord:
             - '^process_resident_memory_bytes$'
             - '^process_start_time_seconds$'
             - '^process_virtual_memory_bytes$'
+          blacklist: []
+        "dcgm":
+          disabled: false
+          type: "kubernetes_prometheus"
+          index: ""
+          metricsIndex: ""
+          metricsOutput: ""
+          host: '${KUBERNETES_NODENAME}'
+          source: "dcgm"
+          interval: "60s"
+          timeout: "60s"
+          podNamespace: gpu-operator
+          podSelector: app=nvidia-dcgm-exporter
+          port: 9400
+          scheme: http
+          path: /metrics
+          endpoint: ""
+          endpoints: []
+          tokenPath: ""
+          certPath: ""
+          clientCertPath: ""
+          clientKeyPath: ""
+          insecure: false
+          includeHelp: false
+          output: ""
+          whitelist:
+            - '^DCGM_FI_PROF_GR_ENGINE_ACTIVE$'
+            - '^DCGM_FI_DEV_GPU_UTIL$'
+            - '^DCGM_FI_DEV_FB_USED$'
+            - '^DCGM_FI_DEV_FB_FREE$'
+            - '^DCGM_FI_DEV_FB_RESERVED$'
+            - '^DCGM_FI_DEV_GPU_TEMP$'
+            - '^DCGM_FI_DEV_POWER_USAGE$'
           blacklist: []
       kubernetesEvents:
         disabled: false

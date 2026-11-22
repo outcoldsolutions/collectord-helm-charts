@@ -352,6 +352,25 @@ metricsOutput = {{ $v.metricsOutput | default "" }}
 {{- end }}
 
 {{/*
+collectord.excludeFields - an output's excludeFields.<field> lines. Takes the value: a list of
+field names, or the conf's map of field name to true or false, written out as given (a named
+output that sets only false entries then keeps its own map, not the main output's).
+*/}}
+{{- define "collectord.excludeFields" -}}
+{{- $lines := list -}}
+{{- if kindIs "map" . -}}
+{{- range $field, $on := . -}}
+{{- $lines = append $lines (printf "excludeFields.%s = %v" $field ($on | default false)) -}}
+{{- end -}}
+{{- else -}}
+{{- range . -}}
+{{- $lines = append $lines (printf "excludeFields.%s = true" .) -}}
+{{- end -}}
+{{- end -}}
+{{- join "\n" $lines -}}
+{{- end -}}
+
+{{/*
 collectord.environment - "openshift" or "kubernetes", the prefix of the fields Collectord
 composes for workloads (openshift_namespace on OpenShift, never kubernetes_namespace), which
 every field name and index name in an example must use. Takes the root context.

@@ -112,6 +112,26 @@ the tag then only labels it. Look the digest up with
 `docker buildx imagetools inspect registry.outcold.solutions/outcoldsolutions/collectorforkubernetes:<tag>`
 (the `Digest:` line). The FIPS tag has a digest of its own.
 
+## Uninstalling
+
+```bash
+helm uninstall collectorforkubernetes-opensearch --namespace collectorforkubernetes-opensearch
+```
+
+On OpenShift, `helm uninstall` leaves the chart's SecurityContextConstraints in the cluster: the chart
+installs it as a Helm hook, and Helm does not remove hook resources. It admits privileged pods
+run by the service account `collectorforkubernetes-opensearch` of the release's namespace, and
+would admit a service account created under that name later, so delete it as well. It is named
+after the release, or `scc.name` when you set one:
+
+```bash
+oc delete scc collectorforkubernetes-opensearch
+```
+
+The custom resource definitions (`configurations.collectord.io` and `splunkoutputs.collectord.io`)
+stay too, as Helm never deletes a chart's CRDs. Delete them only when no other Collectord release
+is left in the cluster: deleting a definition deletes every object of that kind.
+
 ## Configuration
 
 Collectord is configured using the `ini` file format. You can find a reference with all possible configurations [here](https://www.outcoldsolutions.com/docs/elasticsearch-kubernetes/configuration/opensearch/).

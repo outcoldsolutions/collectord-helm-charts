@@ -96,7 +96,7 @@ data:
     hostname = {{ .hostname }}
 
     # Default output for events, logs and metrics
-    # valid values: splunk and devnull
+    # valid values: splunk, s2s, otlp and devnull
     # Use devnull by default if you don't want to redirect data
     defaultOutput = {{ .defaultOutput }}
 
@@ -153,8 +153,8 @@ data:
 
     {{- if hasKey . "multioutput.async" }}
 
-    # Publish to non-default outputs asynchronously (default), so a slow or down output does not
-    # block the others; false holds the pipeline back instead of dropping events.
+    # Publish to non-default outputs asynchronously (default): one that stops taking events holds
+    # the others back a second at most, then drops; false holds the pipeline back instead.
     multioutput.async = {{ index . "multioutput.async" }}
     {{- end }}
     {{- if hasKey . "multioutput.asyncBufferSize" }}
@@ -333,6 +333,12 @@ data:
     {{- range $key, $value := .authorization }}
     authorization.{{ $key }} = {{ $value }}
     {{- end }}
+
+    # The namespaces whose pods can use a key; any pod can when it is not set
+    # authorizationNamespaces.key1 = monitoring,kube-system
+    {{- range $key, $value := .authorizationNamespaces }}
+    authorizationNamespaces.{{ $key }} = {{ if kindIs "slice" $value }}{{ join "," $value }}{{ else }}{{ $value }}{{ end }}
+    {{- end }}
     {{- end }}
     {{- end }}
 
@@ -363,6 +369,11 @@ data:
     #                             failure (connection or HTTP status code >= 500)
     # With round-robin and random-with-round-robin, the instances on a failed url can all move to the same next one.
     urlSelection = {{ .urlSelection }}
+    {{- end }}
+    {{- if not (kindIs "invalid" .loadBalanceFrequency) }}
+    # With several urls, how long to send to one before moving to the next one urlSelection picks,
+    # leaving out one that failed in the last 5 minutes (0: only after a failure)
+    loadBalanceFrequency = {{ .loadBalanceFrequency }}
     {{- end }}
     token = {{ .token }}
     {{- if hasKey . "insecure" }}
@@ -453,12 +464,15 @@ data:
     # through a SOCKS5 proxyUrl
     maxConnsPerHost = {{ .maxConnsPerHost }}
     {{- end }}
+    {{- if not (or (kindIs "invalid" .maxConnAge) (eq (toString .maxConnAge) "")) }}
+    # How long the output's connections take requests before it opens new ones, so DNS or a load
+    # balancer can pick another endpoint (unset or 0: not replaced by age); not applied with ackEnabled
+    maxConnAge = {{ .maxConnAge }}
+    {{- end }}
     {{- if .excludeFields }}
     # if you want to exclude some preindexed fields from events
     # excludeFields.{{ include "collectord.environment" $ }}_pod_ip = true
-    {{ range .excludeFields }}
-    excludeFields.{{ . }} = true
-    {{- end }}
+    {{ include "collectord.excludeFields" .excludeFields | nindent 4 }}
     {{- end }}
     {{- if hasKey . "duplicateFieldsWithUnderscore" }}
     # For the move to fieldsSeparator = ".": send every built-in field a second time under its
@@ -501,6 +515,37 @@ data:
     # Change to 9 for nanoseconds
     ; timestampPrecision = 3
     timestampPrecision = {{ .timestampPrecision }}
+    {{- end }}
+    {{- if .continuesFrom }}
+    continuesFrom = {{ .continuesFrom }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- range $key, $val := .Values.configuration.outputs.s2s }}
+    {{- if or (ne $key "default") $val.url $val.urls (dig "indexerDiscovery" "managerUrl" "" $val) (eq $.Values.configuration.general.defaultOutput "s2s") (gt (len $.Values.configuration.outputs.s2s) 1) }}
+    {{ if eq $key "default" }}
+    # Splunk-to-Splunk to the indexers' splunktcp inputs: url tcp://host:port or tls://host:port
+    # Beta.
+    {{- end }}
+    [output.s2s{{ if ne $key "default" }}::{{ $key }}{{ end }}]
+    {{- range $k, $v := $val }}
+    {{- if eq $k "urls" }}
+    {{- range $i, $u := $v }}
+    urls.{{ add1 $i }} = {{ $u }}
+    {{- end }}
+    {{- else if eq $k "excludeFields" }}
+    {{- with include "collectord.excludeFields" $v }}
+    {{- . | nindent 4 }}
+    {{- end }}
+    {{- else if kindIs "map" $v }}
+    {{- range $k2, $v2 := $v }}
+    {{- if not (or (kindIs "invalid" $v2) (eq (toString $v2) "")) }}
+    {{ $k }}.{{ $k2 }} = {{ $v2 }}
+    {{- end }}
+    {{- end }}
+    {{- else if not (or (kindIs "invalid" $v) (eq (toString $v) "")) }}
+    {{ $k }} = {{ $v }}
+    {{- end }}
     {{- end }}
     {{- end }}
     {{- end }}
@@ -582,6 +627,11 @@ data:
     # Default algorithm between threads is roundrobin, but you can change it to weighted
     threadsAlgorithm = {{ .threadsAlgorithm }}
     {{- end }}
+    {{- if not (or (kindIs "invalid" .maxConnAge) (eq (toString .maxConnAge) "")) }}
+    # How long the output's connections take requests before it opens new ones, so DNS or a load
+    # balancer can pick another node (unset or 0: not replaced by age)
+    maxConnAge = {{ .maxConnAge }}
+    {{- end }}
     {{- if .put }}
     # Submit objects to elasticsearch
     {{- range $key, $val := .put }}
@@ -603,6 +653,31 @@ data:
     network = {{ .network }}
     {{- end }}
     address = {{ .address }}
+    {{- end }}
+    {{- end }}
+    {{- range $key, $val := .Values.configuration.outputs.otlp }}
+    {{- if or (ne $key "default") $val.url $val.logsUrl $val.metricsUrl (eq $.Values.configuration.general.defaultOutput "otlp") (gt (len $.Values.configuration.outputs.otlp) 1) }}
+    {{ if eq $key "default" }}
+    # an OTLP receiver: over HTTP logs to <url>/v1/logs, metrics to <url>/v1/metrics; protocol = grpc at a url
+    # with no path (:4317). Beta.
+    {{- end }}
+    [output.otlp{{ if ne $key "default" }}::{{ $key }}{{ end }}]
+    {{- range $k, $v := $val }}
+    {{- if eq $k "excludeFields" }}
+    {{- with include "collectord.excludeFields" $v }}
+    {{- . | nindent 4 }}
+    {{- end }}
+    {{- else if kindIs "map" $v }}
+    {{- /* a header set empty stays: a named output's headers replace the main one's whole */ -}}
+    {{- range $k2, $v2 := $v }}
+    {{- if not (kindIs "invalid" $v2) }}
+    {{ $k }}.{{ $k2 }} = {{ $v2 }}
+    {{- end }}
+    {{- end }}
+    {{- else if not (or (kindIs "invalid" $v) (eq (toString $v) "")) }}
+    {{ $k }} = {{ $v }}
+    {{- end }}
+    {{- end }}
     {{- end }}
     {{- end }}
 {{- end }}
@@ -1301,8 +1376,6 @@ data:
 
     # Override host (environment variables are supported)
     host = {{ .host }}
-
-    source = {{ .source }}
 
     interval = {{ .interval }}
 
